@@ -1,0 +1,82 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c8be60c551b56a949864a9f34bedcdcb, type: 3}
+  m_Name: PresentationAssets
+  m_EditorClassIdentifier: ColorBlocks.Runtime::ColorBlocks.Presentation.PresentationAssets
+  litTemplate: {fileID: 2100000, guid: 3d9f9097ca92dbf47a1f4b989085255e, type: 2}
+  unlitTemplate: {fileID: 2100000, guid: 834a86cd191c02144916801ef4516cd6, type: 2}
+  primaryFont: {fileID: 11400000, guid: ca4065ef065309340b3e56b39d96c9c5, type: 2}
+  feelProfile:
+    referenceHalfWidth: 4.7
+    minimumCameraHalfHeight: 8.35
+    boardTopMargin: 1.48
+    boardOuterWidth: 9.1
+    boardOuterHeight: 8.55
+    boardInnerWidth: 8.48
+    boardInnerHeight: 8.03
+    gridWidth: 7.89
+    gridHeight: 7.07
+    gridTopPadding: -0.04
+    referenceColumns: 10
+    referenceRows: 10
+    blockFill: {x: 0.985, y: 0.985}
+    blockDepth: 0.36
+    faceScale: {x: 0.56, y: 0.48}
+    stackLayerStep: 0.3535
+    hiddenLayerDepth: 0.22
+    blockShadowOffset: 0.045
+    frontBandScale: {x: 0.91, y: 0.46}
+    frontBandOffset: 0.7
+    slotHorizontalExtent: 3.46
+    slotGapBelowBoard: 2.062
+    slotOuterSize: {x: 1.47, y: 1.39}
+    slotInnerSize: {x: 1.18, y: 1.1}
+    queueHorizontalExtent: 3.46
+    queueGapBelowSlots: 1.92
+    queueMinimumSpacing: 1.08
+    queueMaximumSpacing: 1.74
+    queueBottomMargin: 0.62
+    queuedUnitScale: 1.18
+    selectableUnitScale: 1.18
+    activeUnitScale: 1.2
+    unitMoveDuration: 0.267
+    unitMoveArc: 0.24
+    queueSlideDuration: 0.18
+    unitExitDuration: 0.22
+    shotInterval: 0.075
+    recoilDuration: 0.085
+    projectileSpeed: 18.5
+    projectileMinimumDuration: 0.16
+    projectileMaximumDuration: 0.44
+    projectileArc: 0.055
+    projectileScale: 0.52
+    maximumProjectilesInFlight: 6
+    revealDuration: 0.13
+    fallDelay: 0.025
+    fallBaseDuration: 0.28
+    fallDistanceDuration: 0.04
+    fallBounceHeight: 0.068
+    fragmentCount: 10
+    fragmentDuration: 0.42
+    fragmentSpeed: 2.65
+    fragmentGravity: 8.4
+    impactFlashDuration: 0.04
+  select: {fileID: 8300000, guid: 1d4a8b960041e0241b63055fb10f8337, type: 3}
+  shot: {fileID: 8300000, guid: 76838a0659478d84091a2352bfd96750, type: 3}
+  unitLand: {fileID: 8300000, guid: 49b149e10d8596d418aa75c9987b95e9, type: 3}
+  unitExit: {fileID: 8300000, guid: 58233e3fc95fcc3469810337f991d01c, type: 3}
+  win: {fileID: 8300000, guid: b2a6f3bf4b81335468de5d6d76cdc8c0, type: 3}
+  loss: {fileID: 8300000, guid: a668bdcecd3a3584daafa0bddd472178, type: 3}
+  impacts:
+  - {fileID: 8300000, guid: fe4e5f4c768bf4c45b5393a72d2dd19e, type: 3}
+  - {fileID: 8300000, guid: a99edb89e0fb9a84fad309ea468155c0, type: 3}
+  - {fileID: 8300000, guid: ec455a5e3473b2849a6a6e160d863d4f, type: 3}

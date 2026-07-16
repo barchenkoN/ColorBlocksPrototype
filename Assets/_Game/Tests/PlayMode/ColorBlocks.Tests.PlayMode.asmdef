@@ -1,0 +1,10 @@
+{
+  "name": "ColorBlocks.Tests.PlayMode",
+  "rootNamespace": "ColorBlocks.Tests",
+  "references": [
+    "ColorBlocks.Runtime"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "ColorBlocks.Editor",
+  "rootNamespace": "ColorBlocks.Editor",
+  "references": [
+    "ColorBlocks.Runtime",
+    "Unity.TextMeshPro"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": true
+}

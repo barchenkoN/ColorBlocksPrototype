@@ -1,0 +1,13 @@
+{
+  "name": "ColorBlocks.Tests.EditMode",
+  "rootNamespace": "ColorBlocks.Tests",
+  "references": [
+    "ColorBlocks.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
