@@ -44,6 +44,8 @@ jobs:
             --dir input
           ditto -x -k input/ColorBlocks-iOS-Xcode.zip ios-src
           test -f ios-src/Unity-iPhone.xcodeproj/project.pbxproj
+          cp Assets/_Game/Plugins/iOS/ColorBlocksHaptics.mm \
+            ios-src/Libraries/_Game/Plugins/iOS/ColorBlocksHaptics.mm
           find ios-src -type f -name "*.sh" -exec chmod +x {} \;
           find ios-src -type f -iname "usymtool*" -exec chmod +x {} \;
 

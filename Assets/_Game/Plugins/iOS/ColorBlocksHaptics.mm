@@ -6,16 +6,32 @@ static UIImpactFeedbackGenerator *CB_HeavyGenerator;
 
 static UIImpactFeedbackGenerator *CB_GetGenerator(UIImpactFeedbackStyle style)
 {
-    UIImpactFeedbackGenerator **slot = &CB_LightGenerator;
-    if (style == UIImpactFeedbackStyleHeavy) slot = &CB_HeavyGenerator;
+    UIImpactFeedbackGenerator *generator = nil;
+    if (style == UIImpactFeedbackStyleHeavy)
+    {
+        if (CB_HeavyGenerator == nil)
+            CB_HeavyGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:style];
+        generator = CB_HeavyGenerator;
+    }
     if (@available(iOS 13.0, *))
     {
-        if (style == UIImpactFeedbackStyleSoft) slot = &CB_SoftGenerator;
+        if (style == UIImpactFeedbackStyleSoft)
+        {
+            if (CB_SoftGenerator == nil)
+                CB_SoftGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:style];
+            generator = CB_SoftGenerator;
+        }
     }
 
-    if (*slot == nil) *slot = [[UIImpactFeedbackGenerator alloc] initWithStyle:style];
-    [*slot prepare];
-    return *slot;
+    if (generator == nil)
+    {
+        if (CB_LightGenerator == nil)
+            CB_LightGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:style];
+        generator = CB_LightGenerator;
+    }
+
+    [generator prepare];
+    return generator;
 }
 
 extern "C"
