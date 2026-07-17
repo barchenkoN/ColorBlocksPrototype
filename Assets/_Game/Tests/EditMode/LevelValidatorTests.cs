@@ -103,6 +103,43 @@ namespace ColorBlocks.Tests
         }
 
         [Test]
+        public void MissingLowerLayer_BeneathAnUpperLayer_IsRejected()
+        {
+            CellDefinition unsupportedStack = new(
+                0,
+                0,
+                new[] { BlockColorId.Red, BlockColorId.Blue });
+            SetField(
+                unsupportedStack,
+                "layers",
+                new List<BlockLayerDefinition>
+                {
+                    null,
+                    new(BlockColorId.Blue)
+                });
+            LevelDefinition level = ScriptableObject.CreateInstance<LevelDefinition>();
+            level.Configure(
+                1,
+                1,
+                1,
+                new[] { unsupportedStack },
+                new[]
+                {
+                    Lane(new UnitDefinition(BlockColorId.Blue, 1)),
+                    Lane(),
+                    Lane(),
+                    Lane(),
+                    Lane()
+                });
+
+            string report = string.Join("\n", LevelValidator.Validate(level));
+
+            Assert.That(report, Does.Contain("Cell (0, 0), layer 1 is null"),
+                "An upper layer cannot be authored without a concrete lower support layer.");
+            UnityEngine.Object.DestroyImmediate(level);
+        }
+
+        [Test]
         public void AuthoringValidation_RejectsAChargeBalancedButUnsolvableQueue()
         {
             LevelDefinition level = ScriptableObject.CreateInstance<LevelDefinition>();

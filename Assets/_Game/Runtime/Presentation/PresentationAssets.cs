@@ -10,6 +10,7 @@ namespace ColorBlocks.Presentation
     {
         [Header("Serialized shader anchors")]
         [SerializeField] private Material litTemplate;
+        [SerializeField] private Material projectileLitTemplate;
         [SerializeField] private Material unlitTemplate;
 
         [Header("Typography")]
@@ -28,6 +29,7 @@ namespace ColorBlocks.Presentation
         [SerializeField] private AudioClip[] impacts = Array.Empty<AudioClip>();
 
         public Material LitTemplate => litTemplate;
+        public Material ProjectileLitTemplate => projectileLitTemplate;
         public Material UnlitTemplate => unlitTemplate;
         public TMP_FontAsset PrimaryFont => primaryFont;
         public GameFeelProfile FeelProfile => feelProfile;
@@ -53,6 +55,15 @@ namespace ColorBlocks.Presentation
                 return false;
             }
 
+            if (projectileLitTemplate == null ||
+                projectileLitTemplate.shader == null ||
+                !projectileLitTemplate.shader.isSupported ||
+                !projectileLitTemplate.IsKeywordEnabled("_EMISSION"))
+            {
+                reason = "Projectile Lit material template is missing, unsupported, or lacks its serialized emission variant.";
+                return false;
+            }
+
             if (primaryFont == null)
             {
                 reason = "Primary TMP font asset is missing.";
@@ -65,6 +76,25 @@ namespace ColorBlocks.Presentation
                 return false;
             }
 
+            if (feelProfile.BlockDepth <= 0f || feelProfile.HiddenLayerDepth <= 0f)
+            {
+                reason = "Physical block depth must be positive.";
+                return false;
+            }
+
+            if (Mathf.Abs(feelProfile.HiddenLayerDepth - feelProfile.BlockDepth) > 0.0001f)
+            {
+                reason = "Physical stack step must equal block depth so layers neither float nor overlap.";
+                return false;
+            }
+
+            if (Mathf.Abs(feelProfile.StackLayerStep) > 0.0001f ||
+                Mathf.Abs(feelProfile.StackLayerHorizontalStep) > 0.0001f)
+            {
+                reason = "Physical stack layers must share board-space X/Y; only their Z height may differ.";
+                return false;
+            }
+
             reason = string.Empty;
             return true;
         }
@@ -72,6 +102,7 @@ namespace ColorBlocks.Presentation
 #if UNITY_EDITOR
         public void Configure(
             Material lit,
+            Material projectileLit,
             Material unlit,
             TMP_FontAsset font,
             AudioClip selectClip,
@@ -83,6 +114,7 @@ namespace ColorBlocks.Presentation
             AudioClip[] impactClips)
         {
             litTemplate = lit;
+            projectileLitTemplate = projectileLit;
             unlitTemplate = unlit;
             primaryFont = font;
             // Canonical rebuilds intentionally refresh every measured layout/feel value.

@@ -25,6 +25,22 @@ namespace ColorBlocks.Editor
         private const string FredokaTmpPath = GameRoot + "/Art/Fonts/Fredoka-SDF.asset";
         private const string AudioPath = GameRoot + "/Audio/Kenney";
 
+        [MenuItem("Color Blocks/Prepare Primary Font Asset")]
+        public static void PreparePrimaryFontAsset()
+        {
+            TMP_FontAsset tmpFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaTmpPath);
+            if (tmpFont == null)
+            {
+                throw new InvalidOperationException(
+                    $"Required TMP font asset is missing at {FredokaTmpPath}. Rebuild prototype content first.");
+            }
+
+            BakeHudCharacters(tmpFont);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("Fredoka TMP asset prepared with persistent printable ASCII HUD glyphs.");
+        }
+
         [MenuItem("Color Blocks/Rebuild Prototype Content")]
         public static void RebuildPrototypeContent()
         {
@@ -84,6 +100,15 @@ namespace ColorBlocks.Editor
             Material lit = LoadOrCreateMaterial(
                 MaterialsPath + "/RuntimeLitTemplate.mat",
                 "Universal Render Pipeline/Lit");
+            Material projectileLit = LoadOrCreateMaterial(
+                MaterialsPath + "/RuntimeProjectileLitTemplate.mat",
+                "Universal Render Pipeline/Lit");
+            projectileLit.EnableKeyword("_EMISSION");
+            if (projectileLit.HasProperty("_EmissionColor"))
+            {
+                projectileLit.SetColor("_EmissionColor", Color.white * 0.32f);
+            }
+            EditorUtility.SetDirty(projectileLit);
             Material unlit = LoadOrCreateMaterial(
                 MaterialsPath + "/RuntimeUnlitTemplate.mat",
                 "Universal Render Pipeline/Unlit");
@@ -110,6 +135,8 @@ namespace ColorBlocks.Editor
                 EditorUtility.SetDirty(tmpFont);
             }
 
+            BakeHudCharacters(tmpFont);
+
             SerializedObject settingsObject = new(tmpSettings);
             SerializedProperty version = settingsObject.FindProperty("assetVersion");
             if (version != null) version.stringValue = "2";
@@ -123,6 +150,7 @@ namespace ColorBlocks.Editor
             PresentationAssets assets = LoadOrCreate<PresentationAssets>(ResourcesPath + "/PresentationAssets.asset");
             assets.Configure(
                 lit,
+                projectileLit,
                 unlit,
                 tmpFont,
                 LoadAudio("select_006.ogg"),
@@ -138,6 +166,44 @@ namespace ColorBlocks.Editor
                     LoadAudio("impactSoft_medium_002.ogg")
                 });
             EditorUtility.SetDirty(assets);
+        }
+
+        private static void BakeHudCharacters(TMP_FontAsset tmpFont)
+        {
+            // A dynamic TMP asset normally clears its generated glyph data during a player
+            // build. The HUD must render on the very first iPhone frame, so persist the full
+            // printable ASCII set used by every current and diagnostic UI label.
+            SerializedObject fontObject = new(tmpFont);
+            SerializedProperty clearDynamicData = fontObject.FindProperty("m_ClearDynamicDataOnBuild");
+            if (clearDynamicData != null) clearDynamicData.boolValue = false;
+            fontObject.ApplyModifiedPropertiesWithoutUndo();
+
+            char[] printableAscii = new char[95];
+            for (int index = 0; index < printableAscii.Length; index++)
+            {
+                printableAscii[index] = (char)(32 + index);
+            }
+
+            if (!tmpFont.TryAddCharacters(new string(printableAscii), out string missingCharacters) &&
+                !string.IsNullOrEmpty(missingCharacters))
+            {
+                throw new InvalidOperationException(
+                    $"Fredoka TMP asset cannot provide required HUD characters: {missingCharacters}");
+            }
+
+            EditorUtility.SetDirty(tmpFont);
+            if (tmpFont.atlasTextures != null)
+            {
+                for (int index = 0; index < tmpFont.atlasTextures.Length; index++)
+                {
+                    if (tmpFont.atlasTextures[index] != null)
+                    {
+                        EditorUtility.SetDirty(tmpFont.atlasTextures[index]);
+                    }
+                }
+            }
+
+            if (tmpFont.material != null) EditorUtility.SetDirty(tmpFont.material);
         }
 
         private static TMP_Settings EnsureTmpEssentialResources()

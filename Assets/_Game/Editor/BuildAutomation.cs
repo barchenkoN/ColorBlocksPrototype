@@ -9,6 +9,8 @@ namespace ColorBlocks.Editor
     public static class BuildAutomation
     {
         private const string ScenePath = "Assets/_Game/Scenes/Game.unity";
+        private const string AndroidManifestPath = "Assets/Plugins/Android/AndroidManifest.xml";
+        private const string ProjectSettingsPath = "ProjectSettings/ProjectSettings.asset";
 
         [MenuItem("Color Blocks/Build/Android Development APK")]
         public static void BuildAndroidDevelopment()
@@ -26,6 +28,7 @@ namespace ColorBlocks.Editor
 
         private static void Build(BuildTarget target, string output, BuildOptions options)
         {
+            ValidatePlatformConfiguration(target);
             string directory = target == BuildTarget.iOS ? output : Path.GetDirectoryName(output);
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
 
@@ -44,6 +47,26 @@ namespace ColorBlocks.Editor
             }
 
             Debug.Log($"{target} build succeeded: {output} ({report.summary.totalSize / 1048576f:0.0} MB).");
+        }
+
+        private static void ValidatePlatformConfiguration(BuildTarget target)
+        {
+            if (target != BuildTarget.Android) return;
+            string projectSettings = Path.GetFullPath(ProjectSettingsPath);
+            if (!File.Exists(projectSettings) ||
+                File.ReadAllText(projectSettings).IndexOf("useCustomMainManifest: 1", StringComparison.Ordinal) < 0)
+            {
+                throw new InvalidOperationException(
+                    "Android build requires Custom Main Manifest so VIBRATE permission is merged.");
+            }
+
+            string manifest = Path.GetFullPath(AndroidManifestPath);
+            if (!File.Exists(manifest) ||
+                File.ReadAllText(manifest).IndexOf("android.permission.VIBRATE", StringComparison.Ordinal) < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Android haptics permission is missing from {AndroidManifestPath}.");
+            }
         }
     }
 }

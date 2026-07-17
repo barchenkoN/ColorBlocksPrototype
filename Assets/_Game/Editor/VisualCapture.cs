@@ -4,6 +4,7 @@ using System.Reflection;
 using ColorBlocks.Core;
 using ColorBlocks.Gameplay;
 using ColorBlocks.Presentation;
+using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -33,10 +34,32 @@ namespace ColorBlocks.Editor
             public string FileName { get; }
         }
 
+        private enum ScriptedOutcome
+        {
+            None,
+            Win,
+            Loss
+        }
+
         private const string ActiveKey = "ColorBlocks.VisualCapture.Active";
         private const string OutputKey = "ColorBlocks.VisualCapture.Output";
         private const string FinishingKey = "ColorBlocks.VisualCapture.Finishing";
+        private const string ExitCodeKey = "ColorBlocks.VisualCapture.ExitCode";
+        private const string QualityOverrideKey = "ColorBlocks.VisualCapture.QualityOverride";
+        private const string OriginalQualityKey = "ColorBlocks.VisualCapture.OriginalQuality";
+        private const string RequestedQualityKey = "ColorBlocks.VisualCapture.RequestedQuality";
         private const string GameScenePath = "Assets/_Game/Scenes/Game.unity";
+        private const string MobilePipelinePath = "Assets/Settings/Mobile_RPAsset.asset";
+        private const int ResolutionApplyPlayerFrames = 3;
+        private const int StableWorldPlayerFrames = 2;
+        private static readonly string[] LiveWorldRootNames =
+        {
+            "BoardView",
+            "ProjectilePool",
+            "ImpactFxPool",
+            "ActiveSlots",
+            "UnitQueues"
+        };
         private static readonly CaptureSpec[] Specs =
         {
             new(1080, 1920, "initial-1080x1920.png"),
@@ -45,7 +68,9 @@ namespace ColorBlocks.Editor
         };
 
         private static int _captureIndex;
-        private static int _settleFrames;
+        private static int _settledPlayerFrames;
+        private static int _stableWorldPlayerFrames;
+        private static int _lastObservedPlayerFrame = -1;
         private static bool _preparedExtendedStage;
         private static bool _layoutRefreshPending;
         private static float _requestedAspect;
@@ -59,17 +84,52 @@ namespace ColorBlocks.Editor
         private static float _pendingCanvasDistance;
         private static RenderTexture _pendingPreviousTarget;
         private static float _pendingPreviousAspect;
+        private static bool _pendingPreviousOrthographic;
         private static float _pendingPreviousOrthographicSize;
+        private static float _pendingPreviousFieldOfView;
+        private static float _pendingPreviousNearClip;
+        private static float _pendingPreviousFarClip;
+        private static bool _pendingPreviousHdr;
+        private static bool _pendingPreviousMsaa;
+        private static Vector3 _pendingPreviousPosition;
+        private static Quaternion _pendingPreviousRotation;
         private static AsyncGPUReadbackRequest _pendingReadback;
         private static bool _pendingReadbackActive;
+        private static ScriptedOutcome _scriptedOutcome;
+        private static int[] _scriptedLaneChoices;
+        private static int _scriptedChoiceIndex;
+        private static double _nextScriptedChoiceAt;
+        private static double _scriptedOutcomeTimeoutAt;
+        private static double _scriptedOutcomeReachedAt;
 
         static VisualCapture()
         {
             if (SessionState.GetBool(ActiveKey, false)) AttachStateHandler();
+            EditorApplication.quitting -= OnEditorQuitting;
+            EditorApplication.quitting += OnEditorQuitting;
         }
 
         public static void Run()
         {
+            RunInternal(GetArgument("-captureQuality"));
+        }
+
+        /// <summary>
+        /// Runs the complete audit through the Mobile quality level and its
+        /// Mobile_RPAsset, then restores the Editor's original quality level.
+        /// </summary>
+        public static void RunMobile()
+        {
+            RunInternal("Mobile");
+        }
+
+        private static void RunInternal(string requestedQuality)
+        {
+            if (SessionState.GetBool(ActiveKey, false))
+            {
+                throw new InvalidOperationException("A visual capture session is already active.");
+            }
+
             string output = GetArgument("-captureOutput");
             if (string.IsNullOrWhiteSpace(output))
             {
@@ -77,18 +137,24 @@ namespace ColorBlocks.Editor
             }
 
             Directory.CreateDirectory(output);
-            SessionState.SetString(OutputKey, output);
-            SessionState.SetBool(ActiveKey, true);
-            SessionState.SetBool(FinishingKey, false);
-            _captureIndex = 0;
-            _settleFrames = 0;
-            _preparedExtendedStage = false;
-            _layoutRefreshPending = false;
-            _pendingCapturePath = null;
-            _stageStartedAt = EditorApplication.timeSinceStartup;
-            AttachStateHandler();
-            EditorSceneManager.OpenScene(GameScenePath, OpenSceneMode.Single);
-            EditorApplication.EnterPlaymode();
+            try
+            {
+                ConfigureQualityOverride(requestedQuality);
+                SessionState.SetString(OutputKey, output);
+                SessionState.SetBool(ActiveKey, true);
+                SessionState.SetBool(FinishingKey, false);
+                SessionState.SetInt(ExitCodeKey, 0);
+                ResetCaptureState();
+                AttachStateHandler();
+                EditorSceneManager.OpenScene(GameScenePath, OpenSceneMode.Single);
+                EditorApplication.EnterPlaymode();
+            }
+            catch
+            {
+                SessionState.SetBool(ActiveKey, false);
+                RestoreQualityOverride();
+                throw;
+            }
         }
 
         private static void AttachStateHandler()
@@ -103,37 +169,61 @@ namespace ColorBlocks.Editor
 
             if (state == PlayModeStateChange.EnteredPlayMode)
             {
-                _captureIndex = 0;
-                _settleFrames = 0;
-                _preparedExtendedStage = false;
-                _layoutRefreshPending = false;
-                _pendingCapturePath = null;
-                _stageStartedAt = EditorApplication.timeSinceStartup;
-                ApplyResolution(Specs[_captureIndex]);
-                EditorApplication.update -= Tick;
-                EditorApplication.update += Tick;
+                try
+                {
+                    VerifyQualityOverride();
+                    ResetCaptureState();
+                    ApplyResolution(Specs[_captureIndex]);
+                    EditorApplication.update -= Tick;
+                    EditorApplication.update += Tick;
+                }
+                catch (Exception exception)
+                {
+                    FailCapture(exception);
+                }
             }
             else if (state == PlayModeStateChange.EnteredEditMode && SessionState.GetBool(FinishingKey, false))
             {
+                int exitCode = SessionState.GetInt(ExitCodeKey, 1);
+                RestoreQualityOverride();
                 SessionState.SetBool(ActiveKey, false);
                 SessionState.SetBool(FinishingKey, false);
                 EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
-                EditorApplication.Exit(0);
+                EditorApplication.Exit(exitCode);
             }
         }
 
         private static void Tick()
         {
+            try
+            {
+                TickCapture();
+            }
+            catch (Exception exception)
+            {
+                FailCapture(exception);
+            }
+        }
+
+        private static void TickCapture()
+        {
             if (!EditorApplication.isPlaying || EditorApplication.isPaused) return;
-            _settleFrames++;
-            if (_layoutRefreshPending && _settleFrames >= 3)
+            if (!ObservePlayerFrame()) return;
+
+            if (_layoutRefreshPending && _settledPlayerFrames >= ResolutionApplyPlayerFrames)
             {
                 ReloadCurrentLevelForResolution();
                 _layoutRefreshPending = false;
-                _settleFrames = 0;
                 _stageStartedAt = EditorApplication.timeSinceStartup;
+                BeginPlayerFrameWait(true);
                 return;
             }
+
+            // LoadLevel uses deferred Destroy for the previous world's roots. Waiting for
+            // real player frames and then seeing exactly one complete root set for two
+            // consecutive frames prevents old and new levels from sharing a capture.
+            if (_stableWorldPlayerFrames < StableWorldPlayerFrames) return;
+            if (_scriptedOutcome != ScriptedOutcome.None && !AdvanceScriptedOutcome()) return;
             if (_captureIndex == Specs.Length + 2 && EditorApplication.timeSinceStartup - _stageStartedAt < 0.20d) return;
             if (_captureIndex == Specs.Length + 3 && EditorApplication.timeSinceStartup - _stageStartedAt < 0.20d) return;
             if (_captureIndex == Specs.Length + 4 && EditorApplication.timeSinceStartup - _stageStartedAt < 1.25d) return;
@@ -146,7 +236,7 @@ namespace ColorBlocks.Editor
                 _captureIndex != Specs.Length + 4 &&
                 _captureIndex != Specs.Length + 5 &&
                 _captureIndex != Specs.Length + 6 &&
-                _settleFrames < 18) return;
+                _settledPlayerFrames < 18) return;
 
             if (_captureIndex < Specs.Length)
             {
@@ -154,7 +244,6 @@ namespace ColorBlocks.Editor
                 _captureIndex++;
                 if (_captureIndex < Specs.Length)
                 {
-                    _settleFrames = 0;
                     ApplyResolution(Specs[_captureIndex]);
                     return;
                 }
@@ -173,7 +262,6 @@ namespace ColorBlocks.Editor
             if (controller == null || loadLevel == null) throw new InvalidOperationException("Unable to prepare Level 3 visual capture.");
             loadLevel.Invoke(controller, new object[] { 3 });
             _preparedExtendedStage = true;
-            _settleFrames = 0;
             ApplyResolution(new CaptureSpec(1080, 1920, "level3-layers-initial-1080x1920.png"));
         }
 
@@ -184,23 +272,20 @@ namespace ColorBlocks.Editor
             if (controller == null || loadLevel == null) throw new InvalidOperationException("Unable to prepare Level 5 visual capture.");
             loadLevel.Invoke(controller, new object[] { 5 });
             _preparedExtendedStage = true;
-            _settleFrames = 0;
             _stageStartedAt = EditorApplication.timeSinceStartup;
-            ApplyResolution(new CaptureSpec(1080, 1920, "level5-dense-initial-1080x1920.png"));
+            // The supplied IMG_5534 reference is exactly 1170 x 2532. Capture the
+            // densest ten-column board at that native aspect first so camera,
+            // spacing, frame clearance, and stacked-layer exposure can be compared
+            // pixel-for-pixel before the regular 1080 x 1920 validation frame.
+            ApplyResolution(new CaptureSpec(1170, 2532, "level5-dense-initial-1170x2532.png"));
         }
 
         private static void PrepareSafeAreaSimulation()
         {
             SafeAreaFitter fitter = UnityEngine.Object.FindFirstObjectByType<SafeAreaFitter>();
             if (fitter == null) throw new InvalidOperationException("Safe-area visual capture requires SafeAreaFitter.");
-            fitter.enabled = false;
-            RectTransform rect = (RectTransform)fitter.transform;
-            rect.anchorMin = new Vector2(0.035f, 0.055f);
-            rect.anchorMax = new Vector2(0.965f, 0.945f);
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
+            fitter.SetEditorNormalizedSafeArea(new Rect(0.035f, 0.055f, 0.93f, 0.89f));
             _preparedExtendedStage = true;
-            _settleFrames = 0;
             ApplyResolution(new CaptureSpec(1170, 2532, "safearea-sim-1170x2532.png"));
         }
 
@@ -208,12 +293,7 @@ namespace ColorBlocks.Editor
         {
             SafeAreaFitter fitter = UnityEngine.Object.FindFirstObjectByType<SafeAreaFitter>();
             if (fitter == null) return;
-            RectTransform rect = (RectTransform)fitter.transform;
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            fitter.enabled = true;
+            fitter.ClearEditorNormalizedSafeArea();
         }
 
         private static void CaptureExtendedStage()
@@ -234,8 +314,8 @@ namespace ColorBlocks.Editor
                 if (!Capture(new CaptureSpec(1080, 1920, "level3-layers-initial-1080x1920.png"))) return;
                 SelectWinningFrontUnit(3);
                 _captureIndex++;
-                _settleFrames = 0;
                 _stageStartedAt = EditorApplication.timeSinceStartup;
+                BeginPlayerFrameWait(false);
                 return;
             }
 
@@ -243,8 +323,8 @@ namespace ColorBlocks.Editor
             {
                 if (!Capture(new CaptureSpec(1080, 1920, "level3-action-200ms-1080x1920.png"))) return;
                 _captureIndex++;
-                _settleFrames = 0;
                 _stageStartedAt = EditorApplication.timeSinceStartup;
+                BeginPlayerFrameWait(false);
                 return;
             }
 
@@ -252,8 +332,8 @@ namespace ColorBlocks.Editor
             {
                 if (!Capture(new CaptureSpec(1080, 1920, "level3-action-430ms-1080x1920.png"))) return;
                 _captureIndex++;
-                _settleFrames = 0;
                 _stageStartedAt = EditorApplication.timeSinceStartup;
+                BeginPlayerFrameWait(false);
                 return;
             }
 
@@ -267,34 +347,37 @@ namespace ColorBlocks.Editor
 
             if (_captureIndex == Specs.Length + 5)
             {
-                if (!Capture(new CaptureSpec(1080, 1920, "level5-dense-initial-1080x1920.png"))) return;
-                ShowResultOverlay(true);
+                if (!Capture(new CaptureSpec(1170, 2532, "level5-dense-initial-1170x2532.png"))) return;
                 _captureIndex++;
-                _settleFrames = 0;
-                _stageStartedAt = EditorApplication.timeSinceStartup;
+                ApplyResolution(new CaptureSpec(1080, 1920, "level5-dense-initial-1080x1920.png"));
+                BeginPlayerFrameWait(false);
                 return;
             }
 
             if (_captureIndex == Specs.Length + 6)
             {
-                if (!Capture(new CaptureSpec(1080, 1920, "win-popup-1080x1920.png"))) return;
-                ShowResultOverlay(false);
+                if (!Capture(new CaptureSpec(1080, 1920, "level5-dense-initial-1080x1920.png"))) return;
                 _captureIndex++;
-                _settleFrames = 0;
-                _stageStartedAt = EditorApplication.timeSinceStartup;
+                PrepareScriptedOutcome(ScriptedOutcome.Win);
                 return;
             }
 
-            if (_captureIndex != Specs.Length + 7)
+            if (_captureIndex == Specs.Length + 7)
+            {
+                if (!Capture(new CaptureSpec(1080, 1920, "win-popup-1080x1920.png"))) return;
+                _captureIndex++;
+                PrepareScriptedOutcome(ScriptedOutcome.Loss);
+                return;
+            }
+
+            if (_captureIndex != Specs.Length + 8)
             {
                 throw new InvalidOperationException($"Unexpected visual capture stage {_captureIndex}.");
             }
 
             if (!Capture(new CaptureSpec(1080, 1920, "loss-popup-1080x1920.png"))) return;
 
-            EditorApplication.update -= Tick;
-            SessionState.SetBool(FinishingKey, true);
-            EditorApplication.ExitPlaymode();
+            FinishCapture(0);
         }
 
         private static void SelectWinningFrontUnit(int levelNumber)
@@ -332,13 +415,132 @@ namespace ColorBlocks.Editor
             best.NotifyClick();
         }
 
-        private static void ShowResultOverlay(bool won)
+        /// <summary>
+        /// Produces truthful outcome screenshots by driving the same live selection path a
+        /// player would use. A staged HUD overlay over an uncleared board can hide state bugs
+        /// and is not useful as a final QA artifact.
+        /// </summary>
+        private static void PrepareScriptedOutcome(ScriptedOutcome outcome)
         {
             GameController controller = UnityEngine.Object.FindFirstObjectByType<GameController>();
-            FieldInfo hudField = typeof(GameController).GetField("_hud", BindingFlags.Instance | BindingFlags.NonPublic);
-            HudView hud = hudField?.GetValue(controller) as HudView;
-            if (hud == null) throw new InvalidOperationException("Unable to access the HUD for result-state capture.");
-            hud.ShowResult(won, null);
+            MethodInfo loadLevel = typeof(GameController).GetMethod("LoadLevel", BindingFlags.Instance | BindingFlags.NonPublic);
+            LevelCatalog catalog = Resources.Load<LevelCatalog>("LevelCatalog");
+            if (controller == null || loadLevel == null || catalog == null)
+            {
+                throw new InvalidOperationException("Unable to prepare a live result-state capture.");
+            }
+
+            int levelNumber;
+            if (outcome == ScriptedOutcome.Win)
+            {
+                levelNumber = 1;
+                LevelSolveResult solution = LevelSolver.Solve(catalog.GetLevel(levelNumber));
+                if (!solution.IsSolvable || solution.WinningLaneChoices.Count == 0)
+                {
+                    throw new InvalidOperationException("Level 1 has no live visual-capture win path.");
+                }
+
+                _scriptedLaneChoices = new int[solution.WinningLaneChoices.Count];
+                for (int i = 0; i < _scriptedLaneChoices.Length; i++)
+                {
+                    _scriptedLaneChoices[i] = solution.WinningLaneChoices[i];
+                }
+            }
+            else if (outcome == ScriptedOutcome.Loss)
+            {
+                levelNumber = 2;
+                _scriptedLaneChoices = new[] { 2, 3, 4, 5, 2 };
+            }
+            else
+            {
+                throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null);
+            }
+
+            loadLevel.Invoke(controller, new object[] { levelNumber });
+            _scriptedOutcome = outcome;
+            _scriptedChoiceIndex = 0;
+            _nextScriptedChoiceAt = EditorApplication.timeSinceStartup + 0.20d;
+            _scriptedOutcomeTimeoutAt = EditorApplication.timeSinceStartup +
+                (outcome == ScriptedOutcome.Win ? 18d : 6d);
+            _scriptedOutcomeReachedAt = -1d;
+            _stageStartedAt = EditorApplication.timeSinceStartup;
+            BeginPlayerFrameWait(true);
+        }
+
+        private static bool AdvanceScriptedOutcome()
+        {
+            GameController controller = UnityEngine.Object.FindFirstObjectByType<GameController>();
+            if (controller == null) throw new InvalidOperationException("Live result capture lost its GameController.");
+
+            double now = EditorApplication.timeSinceStartup;
+            GameFlowState expected = _scriptedOutcome == ScriptedOutcome.Win
+                ? GameFlowState.Won
+                : GameFlowState.Lost;
+            if (controller.State == expected)
+            {
+                if (_scriptedOutcomeReachedAt < 0d) _scriptedOutcomeReachedAt = now;
+                if (now - _scriptedOutcomeReachedAt < 0.45d) return false;
+
+                _scriptedOutcome = ScriptedOutcome.None;
+                _scriptedLaneChoices = null;
+                _stageStartedAt = now;
+                BeginPlayerFrameWait(false);
+                return false;
+            }
+
+            if (now > _scriptedOutcomeTimeoutAt)
+            {
+                throw new TimeoutException(
+                    $"Live {_scriptedOutcome} capture did not reach {expected}; " +
+                    $"state is {controller.State}, choice {_scriptedChoiceIndex}/{_scriptedLaneChoices?.Length ?? 0}.");
+            }
+
+            if (controller.State != GameFlowState.Playing ||
+                _scriptedLaneChoices == null ||
+                _scriptedChoiceIndex >= _scriptedLaneChoices.Length ||
+                now < _nextScriptedChoiceAt)
+            {
+                return false;
+            }
+
+            int oneBasedLane = _scriptedLaneChoices[_scriptedChoiceIndex];
+            SelectLaneFront(oneBasedLane);
+            _scriptedChoiceIndex++;
+            _nextScriptedChoiceAt = now +
+                (_scriptedOutcome == ScriptedOutcome.Win ? 1.05d : 0.08d);
+            return false;
+        }
+
+        private static void SelectLaneFront(int oneBasedLane)
+        {
+            PresentationAssets presentation = Resources.Load<PresentationAssets>("PresentationAssets");
+            Camera camera = Camera.main;
+            if (presentation == null || camera == null)
+            {
+                throw new InvalidOperationException("Reference layout is unavailable for scripted selection.");
+            }
+
+            GameplayLayout layout = presentation.FeelProfile.ResolveLayout(10, 10, camera.aspect);
+            float targetX = layout.QueueX(oneBasedLane - 1, LevelSolver.LaneCount);
+            UnitClickTarget[] targets = UnityEngine.Object.FindObjectsByType<UnitClickTarget>(FindObjectsSortMode.None);
+            UnitClickTarget best = null;
+            float bestDistance = float.MaxValue;
+            for (int i = 0; i < targets.Length; i++)
+            {
+                Collider collider = targets[i].GetComponent<Collider>();
+                if (collider == null || !collider.enabled) continue;
+                float distance = Mathf.Abs(targets[i].transform.position.x - targetX);
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = targets[i];
+            }
+
+            if (best == null || bestDistance >= 0.10f)
+            {
+                throw new InvalidOperationException($"Lane {oneBasedLane} has no selectable front unit.");
+            }
+
+            best.NotifyClick();
         }
 
         private static void ApplyResolution(CaptureSpec spec)
@@ -346,6 +548,8 @@ namespace ColorBlocks.Editor
             Screen.SetResolution(spec.Width, spec.Height, FullScreenMode.Windowed);
             _requestedAspect = spec.Width / (float)spec.Height;
             _layoutRefreshPending = true;
+            BeginPlayerFrameWait(true);
+            _stageStartedAt = EditorApplication.timeSinceStartup;
             Debug.Log($"[VisualCapture] Preparing {spec.Width}x{spec.Height} render.");
         }
 
@@ -387,19 +591,16 @@ namespace ColorBlocks.Editor
                     throw new InvalidOperationException("GPU readback failed for the visual QA frame.");
                 }
 
-                RenderTexture previousActive = RenderTexture.active;
-                Texture2D image = new(spec.Width, spec.Height, TextureFormat.RGB24, false, false);
+                Texture2D image = new(spec.Width, spec.Height, TextureFormat.RGBA32, false, false);
                 try
                 {
-                    RenderTexture.active = _pendingTarget;
-                    image.ReadPixels(new Rect(0f, 0f, spec.Width, spec.Height), 0, 0, false);
+                    image.LoadRawTextureData(_pendingReadback.GetData<byte>());
                     image.Apply(false, false);
                     File.WriteAllBytes(path, image.EncodeToPNG());
                     Debug.Log($"[VisualCapture] Captured completed URP frame {path}.");
                 }
                 finally
                 {
-                    RenderTexture.active = previousActive;
                     UnityEngine.Object.DestroyImmediate(image);
                     ReleasePendingCapture();
                 }
@@ -428,12 +629,24 @@ namespace ColorBlocks.Editor
             _pendingCamera = camera;
             _pendingPreviousTarget = camera.targetTexture;
             _pendingPreviousAspect = camera.aspect;
+            _pendingPreviousOrthographic = camera.orthographic;
             _pendingPreviousOrthographicSize = camera.orthographicSize;
+            _pendingPreviousFieldOfView = camera.fieldOfView;
+            _pendingPreviousNearClip = camera.nearClipPlane;
+            _pendingPreviousFarClip = camera.farClipPlane;
+            _pendingPreviousHdr = camera.allowHDR;
+            _pendingPreviousMsaa = camera.allowMSAA;
+            _pendingPreviousPosition = camera.transform.position;
+            _pendingPreviousRotation = camera.transform.rotation;
             camera.aspect = spec.Width / (float)spec.Height;
             PresentationAssets presentation = Resources.Load<PresentationAssets>("PresentationAssets");
-            camera.orthographicSize = presentation != null
-                ? presentation.FeelProfile.ResolveCameraHalfHeight(camera.aspect)
-                : Mathf.Max(8.35f, 4.7f / camera.aspect);
+            if (presentation == null)
+            {
+                ReleasePendingCapture();
+                throw new InvalidOperationException("Visual capture requires PresentationAssets.");
+            }
+
+            PresentationCameraRig.Configure(camera, presentation.FeelProfile, camera.aspect);
             camera.targetTexture = target;
 
             _pendingCanvas = canvas;
@@ -445,6 +658,15 @@ namespace ColorBlocks.Editor
                 canvas.renderMode = RenderMode.ScreenSpaceCamera;
                 canvas.worldCamera = camera;
                 canvas.planeDistance = 1f;
+                TMP_Text[] texts = UnityEngine.Object.FindObjectsByType<TMP_Text>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+                for (int textIndex = 0; textIndex < texts.Length; textIndex++)
+                {
+                    if (!texts[textIndex].gameObject.activeInHierarchy) continue;
+                    texts[textIndex].ForceMeshUpdate(true, true);
+                    texts[textIndex].UpdateGeometry(texts[textIndex].mesh, 0);
+                }
                 Canvas.ForceUpdateCanvases();
             }
 
@@ -454,7 +676,7 @@ namespace ColorBlocks.Editor
                 RenderTexture.active = target;
                 GL.Clear(true, true, camera.backgroundColor);
                 camera.Render();
-                _pendingReadback = AsyncGPUReadback.Request(target);
+                _pendingReadback = AsyncGPUReadback.Request(target, 0, TextureFormat.RGBA32);
                 _pendingReadbackActive = true;
 
                 // Do not leave the live camera targeting this texture while the async request
@@ -493,7 +715,16 @@ namespace ColorBlocks.Editor
             {
                 _pendingCamera.targetTexture = _pendingPreviousTarget;
                 _pendingCamera.aspect = _pendingPreviousAspect;
+                _pendingCamera.orthographic = _pendingPreviousOrthographic;
                 _pendingCamera.orthographicSize = _pendingPreviousOrthographicSize;
+                _pendingCamera.fieldOfView = _pendingPreviousFieldOfView;
+                _pendingCamera.nearClipPlane = _pendingPreviousNearClip;
+                _pendingCamera.farClipPlane = _pendingPreviousFarClip;
+                _pendingCamera.allowHDR = _pendingPreviousHdr;
+                _pendingCamera.allowMSAA = _pendingPreviousMsaa;
+                _pendingCamera.transform.SetPositionAndRotation(
+                    _pendingPreviousPosition,
+                    _pendingPreviousRotation);
                 _pendingCamera = null;
             }
 
@@ -504,6 +735,207 @@ namespace ColorBlocks.Editor
                 _pendingCanvas.planeDistance = _pendingCanvasDistance;
                 _pendingCanvas = null;
             }
+        }
+
+        private static void ResetCaptureState()
+        {
+            _captureIndex = 0;
+            _preparedExtendedStage = false;
+            _layoutRefreshPending = false;
+            _pendingCapturePath = null;
+            _scriptedOutcome = ScriptedOutcome.None;
+            _scriptedLaneChoices = null;
+            _scriptedChoiceIndex = 0;
+            _nextScriptedChoiceAt = 0d;
+            _scriptedOutcomeTimeoutAt = 0d;
+            _scriptedOutcomeReachedAt = -1d;
+            _stageStartedAt = EditorApplication.timeSinceStartup;
+            BeginPlayerFrameWait(true);
+        }
+
+        private static void BeginPlayerFrameWait(bool resetWorldStability)
+        {
+            _settledPlayerFrames = 0;
+            _lastObservedPlayerFrame = EditorApplication.isPlaying ? Time.frameCount : -1;
+            if (resetWorldStability) _stableWorldPlayerFrames = 0;
+        }
+
+        private static bool ObservePlayerFrame()
+        {
+            int currentFrame = Time.frameCount;
+            if (_lastObservedPlayerFrame < 0)
+            {
+                _lastObservedPlayerFrame = currentFrame;
+                return false;
+            }
+
+            if (currentFrame == _lastObservedPlayerFrame) return false;
+
+            int elapsedFrames = currentFrame > _lastObservedPlayerFrame
+                ? currentFrame - _lastObservedPlayerFrame
+                : 1;
+            _lastObservedPlayerFrame = currentFrame;
+            _settledPlayerFrames += elapsedFrames;
+
+            if (HasExactlyOneLiveWorld())
+            {
+                // Count observations instead of the frame delta. This proves the world was
+                // complete on separate player-loop iterations even if an Editor update was
+                // skipped while the GPU or asset pipeline was busy.
+                _stableWorldPlayerFrames++;
+            }
+            else
+            {
+                _stableWorldPlayerFrames = 0;
+            }
+
+            return true;
+        }
+
+        private static bool HasExactlyOneLiveWorld()
+        {
+            int[] counts = new int[LiveWorldRootNames.Length];
+            Transform[] transforms = UnityEngine.Object.FindObjectsByType<Transform>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            for (int transformIndex = 0; transformIndex < transforms.Length; transformIndex++)
+            {
+                Transform candidate = transforms[transformIndex];
+                if (candidate.parent != null || !candidate.gameObject.scene.IsValid()) continue;
+
+                for (int nameIndex = 0; nameIndex < LiveWorldRootNames.Length; nameIndex++)
+                {
+                    if (!string.Equals(candidate.name, LiveWorldRootNames[nameIndex], StringComparison.Ordinal)) continue;
+                    counts[nameIndex]++;
+                    break;
+                }
+            }
+
+            for (int i = 0; i < counts.Length; i++)
+            {
+                if (counts[i] != 1) return false;
+            }
+
+            return true;
+        }
+
+        private static void ConfigureQualityOverride(string requestedQuality)
+        {
+            SessionState.SetBool(QualityOverrideKey, false);
+            SessionState.SetInt(OriginalQualityKey, -1);
+            SessionState.SetInt(RequestedQualityKey, -1);
+            if (string.IsNullOrWhiteSpace(requestedQuality)) return;
+
+            string[] qualityNames = QualitySettings.names;
+            int requestedIndex = Array.FindIndex(
+                qualityNames,
+                name => string.Equals(name, requestedQuality, StringComparison.OrdinalIgnoreCase));
+            if (requestedIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Unknown capture quality '{requestedQuality}'. Available levels: {string.Join(", ", qualityNames)}.");
+            }
+
+            int originalIndex = QualitySettings.GetQualityLevel();
+            SessionState.SetInt(OriginalQualityKey, originalIndex);
+            SessionState.SetInt(RequestedQualityKey, requestedIndex);
+            SessionState.SetBool(QualityOverrideKey, true);
+            QualitySettings.SetQualityLevel(requestedIndex, true);
+            VerifyQualityOverride();
+            Debug.Log(
+                $"[VisualCapture] Quality override {qualityNames[originalIndex]} -> {qualityNames[requestedIndex]}, " +
+                $"pipeline {PipelineName(GraphicsSettings.currentRenderPipeline)}.");
+        }
+
+        private static void VerifyQualityOverride()
+        {
+            if (!SessionState.GetBool(QualityOverrideKey, false)) return;
+
+            int requestedIndex = SessionState.GetInt(RequestedQualityKey, -1);
+            string[] qualityNames = QualitySettings.names;
+            if (requestedIndex < 0 || requestedIndex >= qualityNames.Length)
+            {
+                throw new InvalidOperationException("The requested capture quality level is no longer available.");
+            }
+
+            if (QualitySettings.GetQualityLevel() != requestedIndex)
+            {
+                QualitySettings.SetQualityLevel(requestedIndex, true);
+            }
+
+            if (!string.Equals(qualityNames[requestedIndex], "Mobile", StringComparison.OrdinalIgnoreCase)) return;
+
+            RenderPipelineAsset expectedPipeline = AssetDatabase.LoadAssetAtPath<RenderPipelineAsset>(MobilePipelinePath);
+            if (expectedPipeline == null)
+            {
+                throw new InvalidOperationException($"Mobile render pipeline is missing at {MobilePipelinePath}.");
+            }
+
+            RenderPipelineAsset activePipeline = GraphicsSettings.currentRenderPipeline;
+            if (activePipeline != expectedPipeline)
+            {
+                throw new InvalidOperationException(
+                    $"Mobile QA requested {expectedPipeline.name}, but the active pipeline is {PipelineName(activePipeline)}.");
+            }
+        }
+
+        private static void RestoreQualityOverride()
+        {
+            if (!SessionState.GetBool(QualityOverrideKey, false)) return;
+
+            int originalIndex = SessionState.GetInt(OriginalQualityKey, -1);
+            string[] qualityNames = QualitySettings.names;
+            if (originalIndex >= 0 && originalIndex < qualityNames.Length)
+            {
+                QualitySettings.SetQualityLevel(originalIndex, true);
+                Debug.Log(
+                    $"[VisualCapture] Restored quality level {qualityNames[originalIndex]}, " +
+                    $"pipeline {PipelineName(GraphicsSettings.currentRenderPipeline)}.");
+            }
+            else
+            {
+                Debug.LogError("[VisualCapture] Could not restore the original quality level because its index is invalid.");
+            }
+
+            SessionState.SetBool(QualityOverrideKey, false);
+            SessionState.SetInt(OriginalQualityKey, -1);
+            SessionState.SetInt(RequestedQualityKey, -1);
+        }
+
+        private static string PipelineName(RenderPipelineAsset pipeline)
+        {
+            return pipeline != null ? pipeline.name : "Built-in Render Pipeline";
+        }
+
+        private static void FinishCapture(int exitCode)
+        {
+            EditorApplication.update -= Tick;
+            ReleasePendingCapture();
+            SessionState.SetInt(ExitCodeKey, exitCode);
+            SessionState.SetBool(FinishingKey, true);
+            if (EditorApplication.isPlaying)
+            {
+                EditorApplication.ExitPlaymode();
+            }
+            else
+            {
+                RestoreQualityOverride();
+                SessionState.SetBool(ActiveKey, false);
+                SessionState.SetBool(FinishingKey, false);
+                EditorApplication.Exit(exitCode);
+            }
+        }
+
+        private static void FailCapture(Exception exception)
+        {
+            Debug.LogException(exception);
+            FinishCapture(1);
+        }
+
+        private static void OnEditorQuitting()
+        {
+            ReleasePendingCapture();
+            RestoreQualityOverride();
         }
 
         private static string GetArgument(string name)

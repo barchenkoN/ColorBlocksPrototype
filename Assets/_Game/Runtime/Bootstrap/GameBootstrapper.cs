@@ -9,6 +9,8 @@ namespace ColorBlocks.Bootstrap
     public sealed class GameBootstrapper : MonoBehaviour
     {
         private Camera _camera;
+        private GameFeelProfile _feel;
+        private float _configuredAspect = -1f;
 
         private void Awake()
         {
@@ -38,7 +40,8 @@ namespace ColorBlocks.Bootstrap
                 return;
             }
 
-            ConfigureScene(presentationAssets.FeelProfile);
+            _feel = presentationAssets.FeelProfile;
+            ConfigureScene(_feel);
 
             GameController controller = gameObject.GetComponent<GameController>();
             if (controller == null) controller = gameObject.AddComponent<GameController>();
@@ -47,12 +50,9 @@ namespace ColorBlocks.Bootstrap
 
         private void Update()
         {
-            if (_camera == null) return;
-            PresentationAssets assets = Resources.Load<PresentationAssets>("PresentationAssets");
-            if (assets != null && assets.FeelProfile != null)
-            {
-                _camera.orthographicSize = assets.FeelProfile.ResolveCameraHalfHeight(_camera.aspect);
-            }
+            if (_camera == null || _feel == null) return;
+            if (Mathf.Abs(_configuredAspect - _camera.aspect) < 0.0001f) return;
+            ConfigureCamera(_camera.aspect);
         }
 
         private void ConfigureScene(GameFeelProfile feel)
@@ -65,38 +65,74 @@ namespace ColorBlocks.Bootstrap
                 _camera = cameraObject.AddComponent<Camera>();
             }
 
-            _camera.transform.position = new Vector3(0f, 0f, -15f);
-            _camera.transform.rotation = Quaternion.identity;
-            _camera.orthographic = true;
-            _camera.orthographicSize = feel.ResolveCameraHalfHeight(_camera.aspect);
+            ConfigureCamera(_camera.aspect);
             _camera.clearFlags = CameraClearFlags.SolidColor;
-            _camera.backgroundColor = new Color(0.36f, 0.45f, 0.62f);
-            _camera.nearClipPlane = 0.1f;
-            _camera.farClipPlane = 50f;
+            _camera.backgroundColor = new Color(0.365f, 0.50f, 0.75f);
 
             if (_camera.GetComponent<AudioListener>() == null)
             {
                 _camera.gameObject.AddComponent<AudioListener>();
             }
 
-            if (FindAnyObjectByType<Light>() == null)
-            {
-                GameObject lightObject = new("Main Light");
-                Light light = lightObject.AddComponent<Light>();
-                light.type = LightType.Directional;
-                light.color = new Color(0.88f, 0.94f, 1f);
-                light.intensity = 1.12f;
-                // The scene uses explicit bevels and authored fake depth. Realtime directional
-                // shadows become extremely long when a unit moves towards the board plane and
-                // can cover most of a portrait screen on mobile GPUs/capture cameras.
-                light.shadows = LightShadows.None;
-                light.shadowStrength = 0f;
-                lightObject.transform.rotation = Quaternion.Euler(28f, -34f, 0f);
-            }
+            Light main = EnsureNamedLight("Main Light");
+            main.type = LightType.Directional;
+            main.color = new Color(1.0f, 0.94f, 0.84f);
+            // The steeper 40-degree key shortens shadows but contributes less frontal diffuse
+            // light than the old 18-degree angle. Compensate intensity so calibrated palette
+            // values remain unchanged on the board-facing surfaces.
+            main.intensity = 1.42f;
+            main.shadows = LightShadows.Soft;
+            main.shadowStrength = 0.40f;
+            main.shadowBias = 0.055f;
+            main.shadowNormalBias = 0.28f;
+            main.shadowNearPlane = 0.15f;
+            main.shadowResolution = UnityEngine.Rendering.LightShadowResolution.High;
+            main.transform.rotation = Quaternion.Euler(40f, -24f, 0f);
+
+            Light fill = EnsureNamedLight("Fill Light");
+            fill.type = LightType.Directional;
+            fill.color = new Color(0.82f, 0.86f, 1.0f);
+            fill.intensity = 0.52f;
+            fill.shadows = LightShadows.None;
+            // Aim the fill across the board plane so it lifts only the camera-facing Y
+            // depth bands. This keeps the top faces modeled by the key light while making
+            // a supported lower cube readable beneath the cube resting on it.
+            fill.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
 
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.40f, 0.46f, 0.58f);
+            RenderSettings.ambientLight = new Color(0.22f, 0.27f, 0.38f);
+            RenderSettings.reflectionIntensity = 0.38f;
             RenderSettings.fog = false;
+            QualitySettings.shadows = ShadowQuality.All;
+            QualitySettings.shadowResolution = ShadowResolution.High;
+            // The 6-degree long lens sits about 195 units from the board. Keep the complete
+            // tray inside the realtime shadow range on the Mobile URP path.
+            QualitySettings.shadowDistance = 230f;
+            QualitySettings.shadowProjection = ShadowProjection.StableFit;
+            QualitySettings.shadowCascades = 2;
+        }
+
+        private static Light EnsureNamedLight(string objectName)
+        {
+            Light[] lights = FindObjectsByType<Light>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < lights.Length; i++)
+            {
+                Light candidate = lights[i];
+                if (candidate == null || candidate.gameObject.name != objectName) continue;
+                candidate.gameObject.SetActive(true);
+                candidate.enabled = true;
+                return candidate;
+            }
+
+            GameObject lightObject = new(objectName);
+            return lightObject.AddComponent<Light>();
+        }
+
+        private void ConfigureCamera(float aspect)
+        {
+            if (_camera == null || _feel == null) return;
+            _configuredAspect = Mathf.Max(0.1f, aspect);
+            PresentationCameraRig.Configure(_camera, _feel, _configuredAspect);
         }
     }
 }
