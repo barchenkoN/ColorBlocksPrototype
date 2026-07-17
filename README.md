@@ -2,6 +2,10 @@
 
 Mobile portrait gameplay prototype made with Unity 6.3 LTS (`6000.3.19f1`) and URP. It implements the requested five-lane / five-slot color-clearing loop with an original toy-tank presentation. No name, branding, art, materials, sounds, or UI from the reference application are included.
 
+## iPhone gameplay
+
+[Watch the 10-second physical iPhone recording](Demo/iPhone-gameplay.mp4). The video was captured from the installed iOS device build using the iPhone's built-in screen recorder.
+
 ## Open and run
 
 1. Install Unity `6000.3.19f1` with Android Build Support, OpenJDK, and Android SDK/NDK Tools. iOS Build Support is only needed for an iOS export.
