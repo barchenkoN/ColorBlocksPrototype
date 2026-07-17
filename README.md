@@ -16,7 +16,9 @@ Build helpers exist under:
 - `Color Blocks > Build > Android Development APK`
 - `Color Blocks > Build > Export iOS Xcode Project`
 
-The iOS project must be compiled, signed, and tested on macOS. A final APK should only be produced after the visual candidate is approved.
+The iOS project must pass through Xcode on macOS; this can be a local Mac or the included GitHub-hosted macOS workflow. `.github/workflows/ios-device-build.yml` compiles the Unity-generated Xcode project as an unsigned ARM64 device IPA and uploads it as a short-lived Actions artifact. The IPA must still be signed with the tester's Apple account before installation on a physical iPhone. Apple and Unity credentials must never be committed to this repository.
+
+The cloud Xcode build was verified against Xcode 26.5. For device validation, sign `ColorBlocksPrototype-unsigned.ipa` with a free Personal Team account, install it on the provisioned iPhone, enable Developer Mode if requested, and record gameplay with the device's built-in portrait screen recorder.
 
 ## Implemented gameplay
 
