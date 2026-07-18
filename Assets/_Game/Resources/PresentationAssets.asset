@@ -16,6 +16,8 @@ MonoBehaviour:
   projectileLitTemplate: {fileID: 2100000, guid: 47dccf1b084c4d78afbb1b2f3cab346e, type: 2}
   unlitTemplate: {fileID: 2100000, guid: 834a86cd191c02144916801ef4516cd6, type: 2}
   primaryFont: {fileID: 11400000, guid: ca4065ef065309340b3e56b39d96c9c5, type: 2}
+  unitCounterFont: {fileID: 11400000, guid: 525553d8ddecacb418492b63a439d675, type: 2}
+  unitCounterMaterial: {fileID: 2100000, guid: ed89b3763076f654ea9fcd0d702d911c, type: 2}
   feelProfile:
     referenceHalfWidth: 4.7
     minimumCameraHalfHeight: 8.35

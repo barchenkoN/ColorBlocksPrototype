@@ -15,6 +15,8 @@ namespace ColorBlocks.Presentation
 
         [Header("Typography")]
         [SerializeField] private TMP_FontAsset primaryFont;
+        [SerializeField] private TMP_FontAsset unitCounterFont;
+        [SerializeField] private Material unitCounterMaterial;
 
         [Header("Reference-matched layout and feel")]
         [SerializeField] private GameFeelProfile feelProfile = new();
@@ -32,6 +34,8 @@ namespace ColorBlocks.Presentation
         public Material ProjectileLitTemplate => projectileLitTemplate;
         public Material UnlitTemplate => unlitTemplate;
         public TMP_FontAsset PrimaryFont => primaryFont;
+        public TMP_FontAsset UnitCounterFont => unitCounterFont;
+        public Material UnitCounterMaterial => unitCounterMaterial;
         public GameFeelProfile FeelProfile => feelProfile;
         public AudioClip Select => select;
         public AudioClip Shot => shot;
@@ -70,6 +74,33 @@ namespace ColorBlocks.Presentation
                 return false;
             }
 
+            if (unitCounterFont == null)
+            {
+                reason = "Unit-counter TMP font asset is missing.";
+                return false;
+            }
+
+            if (unitCounterMaterial == null ||
+                unitCounterMaterial.shader == null ||
+                !unitCounterMaterial.shader.isSupported)
+            {
+                reason = "Unit-counter TMP material is missing or unsupported.";
+                return false;
+            }
+
+            if (unitCounterMaterial.mainTexture != unitCounterFont.atlasTexture)
+            {
+                reason = "Unit-counter TMP material does not reference the counter-font atlas.";
+                return false;
+            }
+
+            if (!unitCounterMaterial.IsKeywordEnabled("OUTLINE_ON") ||
+                !unitCounterMaterial.IsKeywordEnabled("UNDERLAY_ON"))
+            {
+                reason = "Unit-counter TMP material is missing its outline or underlay shader variant.";
+                return false;
+            }
+
             if (feelProfile == null)
             {
                 reason = "Game feel profile is missing.";
@@ -105,6 +136,8 @@ namespace ColorBlocks.Presentation
             Material projectileLit,
             Material unlit,
             TMP_FontAsset font,
+            TMP_FontAsset counterFont,
+            Material counterMaterial,
             AudioClip selectClip,
             AudioClip shotClip,
             AudioClip landClip,
@@ -117,6 +150,8 @@ namespace ColorBlocks.Presentation
             projectileLitTemplate = projectileLit;
             unlitTemplate = unlit;
             primaryFont = font;
+            unitCounterFont = counterFont;
+            unitCounterMaterial = counterMaterial;
             // Canonical rebuilds intentionally refresh every measured layout/feel value.
             feelProfile = new GameFeelProfile();
             select = selectClip;

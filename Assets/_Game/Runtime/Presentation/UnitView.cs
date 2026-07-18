@@ -76,50 +76,54 @@ namespace ColorBlocks.Presentation
             Color face = ColorPalette.GetLight(color);
             Color dark = ColorPalette.GetDark(color);
 
-            _halo = CreatePart("SelectionHalo", _root.transform, new Vector3(0f, 0.05f, 0.28f),
-                new Vector3(1.12f, 1.19f, 0.10f), theme.WhiteUnlit,
-                UnityEngine.Color.Lerp(dark, face, 0.16f), false);
+            Color outline = UnityEngine.Color.Lerp(dark, new Color(0.02f, 0.025f, 0.04f), 0.30f);
+            _halo = CreatePart("SelectionHalo", _root.transform, new Vector3(0f, -0.04f, 0.28f),
+                new Vector3(0.98f, 0.82f, 0.08f), theme.WhiteUnlit,
+                outline, false);
             _halo.SetActive(false);
 
-            CreatePart("LeftTread", _root.transform, new Vector3(-0.39f, -0.03f, 0.03f),
-                new Vector3(0.28f, 0.78f, 0.30f), theme.Body(color), dark, true);
-            CreatePart("RightTread", _root.transform, new Vector3(0.39f, -0.03f, 0.03f),
-                new Vector3(0.28f, 0.78f, 0.30f), theme.Body(color), dark, true);
-            CreatePart("Body", _root.transform, new Vector3(0f, 0.04f, -0.06f),
-                new Vector3(0.76f, 0.70f, 0.38f), theme.Body(color), body, true, 0.30f);
-            CreatePart("FacePlate", _root.transform, new Vector3(0f, -0.04f, -0.31f),
-                new Vector3(0.61f, 0.39f, 0.10f), theme.Face(color), face, false);
+            CreatePart("LeftTread", _root.transform, new Vector3(-0.36f, -0.03f, 0.03f),
+                new Vector3(0.28f, 0.68f, 0.30f), theme.Body(color),
+                UnityEngine.Color.Lerp(body, dark, 0.18f), true);
+            CreatePart("RightTread", _root.transform, new Vector3(0.36f, -0.03f, 0.03f),
+                new Vector3(0.28f, 0.68f, 0.30f), theme.Body(color),
+                UnityEngine.Color.Lerp(body, dark, 0.18f), true);
+            CreatePart("Body", _root.transform, new Vector3(0f, -0.01f, -0.06f),
+                new Vector3(0.84f, 0.64f, 0.38f), theme.Body(color), body, true, 0.44f);
+            CreatePart("FacePlate", _root.transform, new Vector3(0f, -0.02f, -0.31f),
+                new Vector3(0.80f, 0.56f, 0.08f), theme.Face(color), face, false, 0.48f);
 
             GameObject pivot = new("TurretPivot");
             pivot.transform.SetParent(_root.transform, false);
-            pivot.transform.localPosition = new Vector3(0f, 0.40f, -0.08f);
+            pivot.transform.localPosition = new Vector3(0f, 0.34f, -0.30f);
             _turretPivot = pivot.transform;
             CreatePart("Turret", _turretPivot, Vector3.zero,
-                new Vector3(0.48f, 0.31f, 0.40f), theme.Face(color), face, true, 0.30f);
-            _barrel = CreatePart("Barrel", _turretPivot, new Vector3(0f, 0.18f, 0f),
-                new Vector3(0.17f, 0.22f, 0.22f), theme.Face(color), face, true).transform;
+                new Vector3(0.43f, 0.22f, 0.24f), theme.Face(color), face, true, 0.44f);
+            _barrel = CreatePart("Barrel", _turretPivot, new Vector3(0f, 0.12f, 0f),
+                new Vector3(0.14f, 0.15f, 0.18f), theme.Face(color), face, true, 0.44f).transform;
 
-            _muzzleFlash = CreatePart("MuzzleFlash", _turretPivot, new Vector3(0f, 0.32f, -0.05f),
+            _muzzleFlash = CreatePart("MuzzleFlash", _turretPivot, new Vector3(0f, 0.23f, -0.05f),
                 new Vector3(0.28f, 0.28f, 0.10f), theme.Projectile(color), face, false);
             _muzzleFlash.SetActive(false);
 
             GameObject textObject = new("Charges", typeof(RectTransform));
             textObject.transform.SetParent(_root.transform, false);
-            textObject.transform.localPosition = new Vector3(0f, 0.11f, -0.47f);
-            textObject.transform.localScale = Vector3.one * 0.04f;
+            textObject.transform.localPosition = new Vector3(0f, -0.015f, -0.47f);
+            textObject.transform.localScale = new Vector3(0.052f, 0.035f, 0.04f);
             if (Camera.main != null) textObject.transform.rotation = Camera.main.transform.rotation;
             textObject.AddComponent<CameraFacingLabel>();
             RectTransform textRect = (RectTransform)textObject.transform;
-            textRect.sizeDelta = new Vector2(20f, 14f);
+            textRect.sizeDelta = new Vector2(22f, 14f);
             _counter = textObject.AddComponent<TextMeshPro>();
-            _counter.font = theme.Assets.PrimaryFont;
+            _counter.font = theme.Assets.UnitCounterFont;
+            _counter.fontSharedMaterial = theme.Assets.UnitCounterMaterial;
             _counter.text = charges.ToString();
-            _counter.fontSize = 100f;
-            _counter.fontStyle = FontStyles.Bold;
+            _counter.fontSize = 112f;
+            _counter.fontStyle = FontStyles.Normal;
+            _counter.fontWeight = FontWeight.Regular;
+            _counter.characterSpacing = -2f;
             _counter.alignment = TextAlignmentOptions.Center;
             _counter.color = UnityEngine.Color.white;
-            _counter.outlineWidth = 0.23f;
-            _counter.outlineColor = new Color32(40, 35, 55, 255);
             _counter.textWrappingMode = TextWrappingModes.NoWrap;
             _counter.raycastTarget = false;
             _counter.renderer.shadowCastingMode = ShadowCastingMode.Off;
@@ -136,7 +140,7 @@ namespace ColorBlocks.Presentation
         public BlockColorId Color { get; }
         public UnitClickTarget ClickTarget { get; }
         public Transform Transform => _root.transform;
-        public Vector3 MuzzlePosition => _turretPivot.TransformPoint(new Vector3(0f, 0.34f, -0.12f));
+        public Vector3 MuzzlePosition => _turretPivot.TransformPoint(new Vector3(0f, 0.25f, -0.12f));
 
         public void SetCharges(int charges) => _counter.text = charges.ToString();
 
@@ -251,7 +255,7 @@ namespace ColorBlocks.Presentation
                 if (token != _recoilVersion) yield break;
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
-                float recoil = Mathf.Sin(t * Mathf.PI) * 0.11f;
+                float recoil = Mathf.Sin(t * Mathf.PI) * 0.075f;
                 _barrel.localPosition = _barrelRestLocalPosition + Vector3.down * recoil;
                 _muzzleFlash.transform.localPosition = _muzzleFlashRestLocalPosition + Vector3.down * recoil;
                 _root.transform.localRotation = _rootRestLocalRotation * Quaternion.Euler(
@@ -322,7 +326,17 @@ namespace ColorBlocks.Presentation
                 target.Renderer.SetPropertyBlock(_propertyBlock);
             }
             Color counterColor = UnityEngine.Color.white;
-            counterColor.a = textAlpha;
+            if (textAlpha < 0.999f)
+            {
+                float colorAmount = Mathf.Clamp01((1f - textAlpha) * 1.8f);
+                counterColor = UnityEngine.Color.Lerp(
+                    UnityEngine.Color.white,
+                    ColorPalette.GetLight(Color),
+                    colorAmount);
+                // Queued labels stay readable, but inherit their unit color instead of
+                // looking like a washed-out white overlay in the deeper rows.
+                counterColor.a = Mathf.Lerp(0.62f, 0.94f, textAlpha);
+            }
             _counter.color = counterColor;
         }
 

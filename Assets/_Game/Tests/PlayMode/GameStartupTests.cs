@@ -5,6 +5,7 @@ using ColorBlocks.Core;
 using ColorBlocks.Gameplay;
 using ColorBlocks.Presentation;
 using NUnit.Framework;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
@@ -136,6 +137,75 @@ namespace ColorBlocks.Tests
             }
 
             unit.Destroy();
+            theme.Dispose();
+            Object.Destroy(parent);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator UnitCounter_UsesSharedOutlinedTypographyAndRoundedTankSilhouette()
+        {
+            PresentationAssets presentation = Resources.Load<PresentationAssets>("PresentationAssets");
+            Assert.That(presentation, Is.Not.Null);
+            Assert.That(presentation.IsValid(out string validationError), Is.True, validationError);
+
+            VisualTheme theme = new(presentation);
+            GameObject parent = new("UnitTypographyTestRoot");
+            UnitView red = new(
+                parent.transform,
+                BlockColorId.Red,
+                10,
+                Vector3.zero,
+                theme,
+                presentation.FeelProfile);
+            UnitView blue = new(
+                parent.transform,
+                BlockColorId.Blue,
+                7,
+                Vector3.right * 2f,
+                theme,
+                presentation.FeelProfile);
+            red.SetQueueState(0, true);
+            blue.SetQueueState(1, false);
+            yield return null;
+
+            TextMeshPro redCounter = red.Transform.Find("Charges")?.GetComponent<TextMeshPro>();
+            TextMeshPro blueCounter = blue.Transform.Find("Charges")?.GetComponent<TextMeshPro>();
+            Assert.That(redCounter, Is.Not.Null);
+            Assert.That(blueCounter, Is.Not.Null);
+            Assert.That(redCounter.font, Is.SameAs(presentation.UnitCounterFont));
+            Assert.That(redCounter.fontSharedMaterial, Is.SameAs(presentation.UnitCounterMaterial));
+            Assert.That(blueCounter.fontSharedMaterial, Is.SameAs(redCounter.fontSharedMaterial),
+                "All unit labels must share the serialized outlined material without per-unit instances.");
+            Assert.That(redCounter.fontStyle, Is.EqualTo(FontStyles.Normal),
+                "The dedicated 700-weight font must not receive a second synthetic bold pass.");
+            Assert.That(redCounter.transform.localScale.x, Is.GreaterThan(redCounter.transform.localScale.y * 1.40f),
+                "Counter digits must retain the broad poster-like proportions measured from the reference.");
+            Assert.That(redCounter.transform.localPosition.y, Is.LessThanOrEqualTo(0f),
+                "Counter digits must sit around the visual centre of the rounded body, not against the turret.");
+            Assert.That(redCounter.color, Is.EqualTo(Color.white));
+            Assert.That(blueCounter.color, Is.Not.EqualTo(Color.white),
+                "Deeper queue labels should inherit their unit colour instead of fading to washed-out white.");
+
+            Transform body = red.Transform.Find("Body");
+            Transform face = red.Transform.Find("FacePlate");
+            Transform turret = red.Transform.Find("TurretPivot/Turret");
+            Transform halo = red.Transform.Find("SelectionHalo");
+            Assert.That(body, Is.Not.Null);
+            Assert.That(face, Is.Not.Null);
+            Assert.That(turret, Is.Not.Null);
+            Assert.That(halo, Is.Not.Null);
+            Assert.That(body.localScale.x, Is.GreaterThan(body.localScale.y),
+                "The main body must read as a broad rounded tank hull.");
+            Assert.That(face.localScale.x / body.localScale.x, Is.GreaterThan(0.90f),
+                "The large rounded front armour must carry the number instead of a narrow square faceplate.");
+            Assert.That(turret.localScale.y, Is.LessThan(body.localScale.y * 0.40f),
+                "The top turret should remain a compact cap rather than elongating the whole unit.");
+            Assert.That(halo.localScale.x, Is.LessThan(1f),
+                "The selection rim must remain inside one lane and cannot become a large rectangular tile.");
+
+            red.Destroy();
+            blue.Destroy();
             theme.Dispose();
             Object.Destroy(parent);
             yield return null;

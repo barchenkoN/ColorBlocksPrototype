@@ -11,6 +11,7 @@ using UnityEditor.PackageManager;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.TextCore.LowLevel;
 
 namespace ColorBlocks.Editor
 {
@@ -23,22 +24,27 @@ namespace ColorBlocks.Editor
         private const string MaterialsPath = GameRoot + "/Art/Materials";
         private const string FredokaFontPath = GameRoot + "/Art/Fonts/Fredoka-Variable.ttf";
         private const string FredokaTmpPath = GameRoot + "/Art/Fonts/Fredoka-SDF.asset";
+        private const string FredokaCounterFontPath = GameRoot + "/Art/Fonts/Fredoka-Bold.ttf";
+        private const string FredokaCounterTmpPath = GameRoot + "/Art/Fonts/Fredoka-Bold-SDF.asset";
+        private const string UnitCounterMaterialPath = MaterialsPath + "/UnitCounter.mat";
         private const string AudioPath = GameRoot + "/Audio/Kenney";
 
         [MenuItem("Color Blocks/Prepare Primary Font Asset")]
         public static void PreparePrimaryFontAsset()
         {
             TMP_FontAsset tmpFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaTmpPath);
-            if (tmpFont == null)
+            TMP_FontAsset counterFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaCounterTmpPath);
+            if (tmpFont == null || counterFont == null)
             {
                 throw new InvalidOperationException(
-                    $"Required TMP font asset is missing at {FredokaTmpPath}. Rebuild prototype content first.");
+                    "A required TMP font asset is missing. Rebuild prototype content first.");
             }
 
             BakeHudCharacters(tmpFont);
+            BakeHudCharacters(counterFont);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("Fredoka TMP asset prepared with persistent printable ASCII HUD glyphs.");
+            Debug.Log("Fredoka TMP assets prepared with persistent printable ASCII glyphs.");
         }
 
         [MenuItem("Color Blocks/Rebuild Prototype Content")]
@@ -135,7 +141,43 @@ namespace ColorBlocks.Editor
                 EditorUtility.SetDirty(tmpFont);
             }
 
+            Font counterSourceFont = AssetDatabase.LoadAssetAtPath<Font>(FredokaCounterFontPath);
+            if (counterSourceFont == null)
+            {
+                throw new InvalidOperationException(
+                    $"Required OFL unit-counter font is missing at {FredokaCounterFontPath}.");
+            }
+
             BakeHudCharacters(tmpFont);
+
+            TMP_FontAsset counterFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaCounterTmpPath);
+            if (counterFont == null)
+            {
+                counterFont = TMP_FontAsset.CreateFontAsset(counterSourceFont);
+                if (counterFont == null) throw new InvalidOperationException("Unable to create the unit-counter TMP font asset.");
+                counterFont.name = "Fredoka Bold SDF";
+                AssetDatabase.CreateAsset(counterFont, FredokaCounterTmpPath);
+                if (counterFont.atlasTextures != null && counterFont.atlasTextures.Length > 0 &&
+                    counterFont.atlasTextures[0] != null)
+                {
+                    AssetDatabase.AddObjectToAsset(counterFont.atlasTextures[0], counterFont);
+                }
+                if (counterFont.material != null) AssetDatabase.AddObjectToAsset(counterFont.material, counterFont);
+                EditorUtility.SetDirty(counterFont);
+                // Persist and reload before populating the dynamic atlas. Unity 6 does not
+                // guarantee that a newly added Font sub-asset keeps its source-font handle
+                // through TryAddCharacters until the enclosing asset has been imported once.
+                AssetDatabase.SaveAssets();
+                AssetDatabase.ImportAsset(FredokaCounterTmpPath, ImportAssetOptions.ForceSynchronousImport);
+                counterFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FredokaCounterTmpPath);
+                if (counterFont == null)
+                {
+                    throw new InvalidOperationException("Unable to reload the unit-counter TMP font asset.");
+                }
+            }
+
+            BakeHudCharacters(counterFont);
+            Material counterMaterial = CreateOrUpdateUnitCounterMaterial(counterFont);
 
             SerializedObject settingsObject = new(tmpSettings);
             SerializedProperty version = settingsObject.FindProperty("assetVersion");
@@ -153,6 +195,8 @@ namespace ColorBlocks.Editor
                 projectileLit,
                 unlit,
                 tmpFont,
+                counterFont,
+                counterMaterial,
                 LoadAudio("select_006.ogg"),
                 LoadAudio("tick_002.ogg"),
                 LoadAudio("drop_003.ogg"),
@@ -184,7 +228,15 @@ namespace ColorBlocks.Editor
                 printableAscii[index] = (char)(32 + index);
             }
 
-            if (!tmpFont.TryAddCharacters(new string(printableAscii), out string missingCharacters) &&
+            string printableCharacters = new(printableAscii);
+            if (tmpFont.HasCharacters(printableCharacters))
+            {
+                EditorUtility.SetDirty(tmpFont);
+                return;
+            }
+
+            FontEngine.InitializeFontEngine();
+            if (!tmpFont.TryAddCharacters(printableCharacters, out string missingCharacters) &&
                 !string.IsNullOrEmpty(missingCharacters))
             {
                 throw new InvalidOperationException(
@@ -240,6 +292,46 @@ namespace ColorBlocks.Editor
             }
 
             return settings;
+        }
+
+        private static Material CreateOrUpdateUnitCounterMaterial(TMP_FontAsset font)
+        {
+            if (font == null || font.material == null)
+            {
+                throw new InvalidOperationException("Unit-counter TMP font has no source material.");
+            }
+
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(UnitCounterMaterialPath);
+            if (material == null)
+            {
+                material = new Material(font.material) { name = "UnitCounter" };
+                AssetDatabase.CreateAsset(material, UnitCounterMaterialPath);
+            }
+            else
+            {
+                material.shader = font.material.shader;
+                material.CopyPropertiesFromMaterial(font.material);
+            }
+
+            // The reference uses a poster-like number treatment: a real 700-weight face,
+            // a thick dark contour and a tiny grounding shadow. Keep these features on one
+            // shared, serialized material so TMP does not allocate a material per unit and
+            // so the required shader_feature variants are retained in iOS/Android players.
+            material.EnableKeyword("OUTLINE_ON");
+            material.EnableKeyword("UNDERLAY_ON");
+            material.SetColor("_FaceColor", Color.white);
+            material.SetFloat("_FaceDilate", 0.05f);
+            material.SetColor("_OutlineColor", new Color32(26, 24, 38, 255));
+            material.SetFloat("_OutlineWidth", 0.38f);
+            material.SetFloat("_OutlineSoftness", 0.01f);
+            material.SetColor("_UnderlayColor", new Color(0.03f, 0.025f, 0.05f, 0.42f));
+            material.SetFloat("_UnderlayOffsetX", 0.08f);
+            material.SetFloat("_UnderlayOffsetY", -0.10f);
+            material.SetFloat("_UnderlayDilate", 0.04f);
+            material.SetFloat("_UnderlaySoftness", 0.04f);
+            material.SetFloat("_PerspectiveFilter", 0f);
+            EditorUtility.SetDirty(material);
+            return material;
         }
 
         private static Material LoadOrCreateMaterial(string path, string shaderName)

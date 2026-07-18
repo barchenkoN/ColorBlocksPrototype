@@ -99,7 +99,7 @@ For production-scale authoring, add a grid painter, batch difficulty scoring, an
 
 ## Presentation, audio, and haptics
 
-- Full 3D procedural presentation in URP. Board, blocks, stack layers, slots, tank units, projectiles, trails, and impact fragments are mesh objects with real Z depth, lit materials, perspective projection, and realtime soft shadows. Only the HUD is screen-space UI.
+- Full 3D procedural presentation in URP. Board, blocks, stack layers, slots, rounded tank units, projectiles, trails, and impact fragments are mesh objects with real Z depth, lit materials, perspective projection, and realtime soft shadows. Tank counters use a dedicated 700-weight Fredoka face, a serialized shared outline/underlay material, and color-keyed queued states. Only the HUD is screen-space UI.
 - Fixed reference tile scale with narrow seams and a calibrated 29.5-degree perspective view. Base cubes rest on the tray; upper cubes are real stacked meshes one cube depth closer to the camera, making both physical layers and their molded side details readable.
 - A 0.18 s selection move with short overshoot, phase-preserved 0.067 s firing cadence, non-accumulating recoil and colored muzzle flash, pooled volumetric projectiles and trails, same-frame block replacement, pooled colored impact flash and 3-axis fragments, 0.10 s layer reveal, and deterministic Y-only stack fall with one positional overshoot and monotonic settle.
 - Imported one-shot audio with bounded voice count and small pitch variation. No runtime tone generation.
@@ -126,7 +126,7 @@ Physical-device profiling is still recommended before a production release, part
 Current automated coverage:
 
 - **33 EditMode tests:** compacting/frontier rules, stack-order preservation, arbitrary depth, rejection of unsupported layers, moving reservations, deterministic priority, level sequence, malformed authoring data, exact ammo balance, dense canonical board/layer/unit counts, solver-proven completion, reproducible strategic losses, rounded 3D mesh integrity, measured perspective layout, camera fit at 720 x 1600 / 1080 x 1920 / 1170 x 2532, projected Z-layer separation, phase-preserved cadence, and the single-axis fall curve.
-- **12 PlayMode tests:** clean perspective startup with realtime shadow checks, a real screen-space perspective raycast, physical Level 3 cube contact at spawn and throughout fall/reveal, volumetric projectile checks, selection-to-impact-to-gravity-to-restart integration, live solver completion of all five levels, truthful win/loss states, rapid repeated input/restart/result-action handling, and rapid-fire cadence/recoil-rest validation.
+- **13 PlayMode tests:** clean perspective startup with realtime shadow checks, a real screen-space perspective raycast, physical Level 3 cube contact at spawn and throughout fall/reveal, volumetric projectile checks, shared outlined counter typography and rounded tank proportions, selection-to-impact-to-gravity-to-restart integration, live solver completion of all five levels, truthful win/loss states, rapid repeated input/restart/result-action handling, and rapid-fire cadence/recoil-rest validation.
 
 The Editor-only `VisualCapture` harness renders the live camera and HUD at 1080 x 1920, 720 x 1600, and 1170 x 2532. It additionally captures a simulated safe area, the initial layered Level 3 board, selection at approximately 200 ms, firing at approximately 430 ms, settled gravity, the dense Level 5 board, and win/loss states. Do not pass `-nographics` when using this renderer.
 
@@ -148,7 +148,7 @@ Unity.exe -batchmode -projectPath <project> `
 
 ## Third-party assets and AI disclosure
 
-- **Fredoka variable font** from Google Fonts, licensed under SIL Open Font License 1.1. License: `Assets/_Game/Art/Fonts/Fredoka-OFL.txt`.
+- **Fredoka variable font** from Google Fonts, plus the committed local 700-weight static instance used by tank counters, licensed under SIL Open Font License 1.1. License: `Assets/_Game/Art/Fonts/Fredoka-OFL.txt`.
 - **Kenney audio clips** from Interface Sounds, UI Audio, and Impact Sounds, licensed CC0. License: `Assets/_Game/Audio/Kenney/Kenney-CC0-License.txt`.
 - Unity URP, Input System, uGUI/TMP, and Test Framework packages are used under their Unity package licenses.
 - OpenAI Codex assisted with reference research, architecture, implementation, original procedural presentation, tests, visual QA tooling, and documentation.

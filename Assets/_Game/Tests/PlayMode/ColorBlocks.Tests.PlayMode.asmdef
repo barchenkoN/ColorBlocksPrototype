@@ -2,7 +2,8 @@
   "name": "ColorBlocks.Tests.PlayMode",
   "rootNamespace": "ColorBlocks.Tests",
   "references": [
-    "ColorBlocks.Runtime"
+    "ColorBlocks.Runtime",
+    "Unity.TextMeshPro"
   ],
   "optionalUnityReferences": [
     "TestAssemblies"
