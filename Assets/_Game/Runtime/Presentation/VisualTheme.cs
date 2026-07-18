@@ -12,6 +12,7 @@ namespace ColorBlocks.Presentation
         private readonly Dictionary<BlockColorId, Material> _projectile = new();
         private readonly List<Material> _owned = new();
         private readonly Material _litTemplate;
+        private readonly Material _projectileLitTemplate;
         private readonly Material _unlitTemplate;
 
         public VisualTheme(PresentationAssets assets)
@@ -24,28 +25,55 @@ namespace ColorBlocks.Presentation
 
             Assets = assets;
             _litTemplate = assets.LitTemplate;
+            _projectileLitTemplate = assets.ProjectileLitTemplate;
             _unlitTemplate = assets.UnlitTemplate;
 
             foreach (BlockColorId id in Enum.GetValues(typeof(BlockColorId)))
             {
-                _body[id] = CreateLit($"{id}_Body", ColorPalette.Get(id), 0.28f);
-                _face[id] = CreateLit($"{id}_Face", ColorPalette.GetLight(id), 0.40f);
-                _projectile[id] = CreateUnlit($"{id}_Projectile", ColorPalette.GetLight(id));
+                _body[id] = CreateLit($"{id}_Body", ColorPalette.Get(id), 0.42f);
+                _face[id] = CreateLit($"{id}_Face", ColorPalette.GetLight(id), 0.54f);
+                Color projectileColor = ColorPalette.GetLight(id);
+                Material projectile = CreateLit(
+                    _projectileLitTemplate,
+                    $"{id}_Projectile",
+                    projectileColor,
+                    0.58f);
+                if (projectile.HasProperty("_EmissionColor"))
+                {
+                    projectile.SetColor("_EmissionColor", projectileColor * 0.32f);
+                }
+                _projectile[id] = projectile;
             }
 
-            Board = CreateLit("Board", new Color(0.045f, 0.10f, 0.20f), 0.30f);
-            BoardInner = CreateLit("BoardInner", new Color(0.075f, 0.16f, 0.29f), 0.18f);
-            Slot = CreateLit("Slot", new Color(0.045f, 0.10f, 0.20f), 0.34f);
-            SlotInner = CreateLit("SlotInner", new Color(0.29f, 0.39f, 0.57f), 0.16f);
+            Color neutralProjectileColor = new(0.94f, 0.97f, 1.0f);
+            ProjectileNeutral = CreateLit(
+                _projectileLitTemplate,
+                "Projectile_Neutral",
+                neutralProjectileColor,
+                0.62f);
+            if (ProjectileNeutral.HasProperty("_EmissionColor"))
+            {
+                ProjectileNeutral.SetColor("_EmissionColor", neutralProjectileColor * 0.42f);
+            }
+
+            // Calibrated against the supplied 1170x2532 frame after Mobile URP lighting:
+            // backdrop ~99/125/174, frame ~42/64/103, inner field ~48/70/109.
+            Backdrop = CreateLit("Backdrop", new Color(0.365f, 0.50f, 0.75f), 0.12f);
+            Board = CreateLit("Board", new Color(0.055f, 0.195f, 0.42f), 0.34f);
+            BoardInner = CreateLit("BoardInner", new Color(0.085f, 0.23f, 0.45f), 0.22f);
+            Slot = CreateLit("Slot", new Color(0.055f, 0.195f, 0.42f), 0.38f);
+            SlotInner = CreateLit("SlotInner", new Color(0.27f, 0.41f, 0.68f), 0.20f);
             WhiteUnlit = CreateUnlit("WhiteUnlit", Color.white);
         }
 
         public PresentationAssets Assets { get; }
+        public Material Backdrop { get; }
         public Material Board { get; }
         public Material BoardInner { get; }
         public Material Slot { get; }
         public Material SlotInner { get; }
         public Material WhiteUnlit { get; }
+        public Material ProjectileNeutral { get; }
 
         public Material Body(BlockColorId id) => _body[id];
         public Material Face(BlockColorId id) => _face[id];
@@ -61,7 +89,12 @@ namespace ColorBlocks.Presentation
 
         private Material CreateLit(string materialName, Color color, float smoothness)
         {
-            Material material = new(_litTemplate) { name = materialName, color = color, hideFlags = HideFlags.DontSave };
+            return CreateLit(_litTemplate, materialName, color, smoothness);
+        }
+
+        private Material CreateLit(Material template, string materialName, Color color, float smoothness)
+        {
+            Material material = new(template) { name = materialName, color = color, hideFlags = HideFlags.DontSave };
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
             if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);

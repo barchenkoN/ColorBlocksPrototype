@@ -10,104 +10,95 @@ namespace ColorBlocks.Presentation
         private readonly Vector3 _baseScale;
         private readonly MeshRenderer _bodyRenderer;
         private readonly MeshRenderer _faceRenderer;
-        private readonly MeshRenderer _bandRenderer;
-        private readonly MeshRenderer _bandInsetRenderer;
-        private readonly Color _bodyColor;
         private readonly Color _faceColor;
-        private readonly Color _bandColor;
         private readonly float _fallOvershoot;
+        private readonly Vector3 _layerOffset;
         private readonly MaterialPropertyBlock _propertyBlock = new();
-        private Vector3 _exposedPosition;
-        private Vector3 _stackOffset;
+        private Vector3 _gridPosition;
         private int _animationVersion;
 
         public BlockView(
             Transform parent,
             BlockNode node,
-            Vector3 coveredPosition,
-            Vector3 exposedPosition,
+            Vector3 gridPosition,
+            Vector3 layerOffset,
             Vector3 scale,
             bool startsCovered,
             VisualTheme theme,
             GameFeelProfile feel)
         {
             Node = node;
-            _exposedPosition = new Vector3(exposedPosition.x, exposedPosition.y, 0f);
-            _stackOffset = coveredPosition - _exposedPosition;
+            _gridPosition = gridPosition;
+            _layerOffset = layerOffset;
             _baseScale = scale;
-            _bodyColor = ColorPalette.Get(node.Color);
-            _faceColor = ColorPalette.GetLight(node.Color);
-            _bandColor = ColorPalette.GetDark(node.Color);
-            _fallOvershoot = feel.FallBounceHeight;
+            Color bodyColor = ColorPalette.Get(node.Color);
+            _faceColor = Color.Lerp(bodyColor, ColorPalette.GetDark(node.Color), 0.22f);
+            _fallOvershoot = feel.FallBounceHeight * feel.CameraPlaneVerticalScale;
 
             GameObject root = new($"Block_{node.Position.X}_{node.Position.Y}_{node.LayerIndex}_{node.Color}");
             root.transform.SetParent(parent, false);
-            root.transform.position = coveredPosition;
+            root.transform.position = _gridPosition + _layerOffset;
             root.transform.localScale = scale;
             _transform = root.transform;
 
             MeshFilter filter = root.AddComponent<MeshFilter>();
-            filter.sharedMesh = ChamferedCubeMesh.Get();
+            filter.sharedMesh = RoundedBoxMesh.Get();
             _bodyRenderer = root.AddComponent<MeshRenderer>();
-            ConfigureRenderer(_bodyRenderer, theme.Body(node.Color));
-
-            GameObject contactShadow = CreatePart(
-                "ContactShadow",
-                root.transform,
-                new Vector3(0f, -feel.BlockShadowOffset / Mathf.Max(0.01f, scale.y), 0.53f),
-                new Vector3(0.96f, 0.96f, 0.08f),
-                theme.Body(node.Color));
-            MeshRenderer shadowRenderer = contactShadow.GetComponent<MeshRenderer>();
-            SetRendererColor(shadowRenderer, Color.Lerp(_bandColor, Color.black, 0.28f));
-
-            GameObject band = CreatePart(
-                "FrontBand",
-                root.transform,
-                new Vector3(0f, -feel.FrontBandOffset, 0f),
-                new Vector3(feel.FrontBandScale.x, feel.FrontBandScale.y, 0.34f),
-                theme.Body(node.Color));
-            _bandRenderer = band.GetComponent<MeshRenderer>();
-            SetRendererColor(_bandRenderer, _bandColor);
-
-            GameObject bandInset = CreatePart(
-                "FrontBandInset",
-                root.transform,
-                new Vector3(0f, -feel.FrontBandOffset, -0.18f),
-                new Vector3(feel.FaceScale.x * 0.90f, 0.18f, 0.10f),
-                theme.Body(node.Color));
-            _bandInsetRenderer = bandInset.GetComponent<MeshRenderer>();
-            SetRendererColor(_bandInsetRenderer, Color.Lerp(_bandColor, Color.black, 0.18f));
+            ConfigureRenderer(_bodyRenderer, theme.Body(node.Color), true);
 
             GameObject face = CreatePart(
                 "FaceInset",
                 root.transform,
-                new Vector3(0f, 0f, -0.54f),
+                new Vector3(0f, 0.035f, -0.46f),
                 new Vector3(feel.FaceScale.x, feel.FaceScale.y, 0.10f),
                 theme.Face(node.Color));
             _faceRenderer = face.GetComponent<MeshRenderer>();
+            SetRendererColor(_faceRenderer, _faceColor);
+            // The top inset sits on the camera-facing Z surface. For a covered cube that
+            // surface is the exact contact plane with the cube above, so rendering it would
+            // place decorative geometry inside the upper cube. The rounded Y side remains
+            // visible as the lower physical band until this layer is exposed.
             _faceRenderer.gameObject.SetActive(!startsCovered);
+
+            // A shallow inset on the camera-facing Y side is the molded detail visible on
+            // every physical depth band in the reference. Unlike the top inset, this side
+            // remains exposed when another cube is stacked directly above along Z.
+            GameObject sideFace = CreatePart(
+                "SideInset",
+                root.transform,
+                new Vector3(0f, -0.505f, 0f),
+                new Vector3(feel.FaceScale.x, feel.FaceScale.y * 0.74f, 0.055f),
+                theme.WhiteUnlit);
+            sideFace.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            SetRendererColor(
+                sideFace.GetComponent<MeshRenderer>(),
+                Color.Lerp(ColorPalette.GetDark(node.Color), Color.black, 0.20f));
         }
 
         public BlockNode Node { get; }
         public Transform Transform => _transform;
-        public Vector3 TargetPosition => _transform.position + new Vector3(0f, 0f, -0.28f);
+        public Vector3 TargetPosition => _transform.TransformPoint(new Vector3(0f, 0f, -0.62f));
 
         /// <summary>
         /// Reference fall is an authored, single-axis ease-out-back: fast descent, one 9-10%
         /// positional overshoot, then a monotonic return. It intentionally has no rigidbody drift,
         /// rotation, or oscillating scale bounce.
         /// </summary>
-        public IEnumerator FallTo(Vector3 exposedPosition, float duration, float delay)
+        public IEnumerator FallTo(Vector3 gridPosition, float duration, float delay)
         {
             int animationVersion = ++_animationVersion;
+            // Commit the logical destination before the authored fall delay. A projectile can
+            // destroy the exposed cube while its stack is waiting to fall; Reveal then cancels
+            // this animation and must still settle the newly exposed cube at the stack's new
+            // cell instead of restoring the old (now unsupported) grid position.
+            _gridPosition = gridPosition;
             if (delay > 0f)
             {
                 yield return new WaitForSeconds(delay);
                 if (animationVersion != _animationVersion) yield break;
             }
 
-            _exposedPosition = new Vector3(exposedPosition.x, exposedPosition.y, 0f);
-            Vector3 target = _exposedPosition + _stackOffset;
+            Vector3 target = _gridPosition + _layerOffset;
             Vector3 start = _transform.position;
             float elapsed = 0f;
 
@@ -129,10 +120,14 @@ namespace ColorBlocks.Presentation
         {
             int animationVersion = ++_animationVersion;
             Vector3 start = _transform.position;
-            _stackOffset = Vector3.zero;
-            Vector3 target = _exposedPosition;
+            Vector3 target = _gridPosition + _layerOffset;
+            SetRendererColor(_faceRenderer, _faceColor);
             _faceRenderer.gameObject.SetActive(true);
-            _transform.localScale = _baseScale * 0.96f;
+            Vector3 revealStartScale = new(
+                _baseScale.x * 0.98f,
+                _baseScale.y * 0.98f,
+                _baseScale.z);
+            _transform.localScale = revealStartScale;
             float elapsed = 0f;
 
             while (elapsed < duration)
@@ -140,9 +135,9 @@ namespace ColorBlocks.Presentation
                 if (animationVersion != _animationVersion) yield break;
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / Mathf.Max(0.001f, duration));
-                float eased = EaseOutBack(t, 0.72f);
+                float eased = EaseOutBack(t, 0.45f);
                 _transform.position = Vector3.LerpUnclamped(start, target, eased);
-                _transform.localScale = Vector3.LerpUnclamped(_baseScale * 0.96f, _baseScale, t);
+                _transform.localScale = Vector3.LerpUnclamped(revealStartScale, _baseScale, t);
                 yield return null;
             }
 
@@ -174,26 +169,29 @@ namespace ColorBlocks.Presentation
             part.transform.localPosition = localPosition;
             part.transform.localScale = localScale;
             MeshFilter filter = part.AddComponent<MeshFilter>();
-            filter.sharedMesh = ChamferedCubeMesh.Get();
+            filter.sharedMesh = RoundedBoxMesh.Get();
             MeshRenderer renderer = part.AddComponent<MeshRenderer>();
-            ConfigureRenderer(renderer, material);
+            ConfigureRenderer(renderer, material, false);
             return part;
         }
 
-        private static void ConfigureRenderer(MeshRenderer renderer, Material material)
+        private static void ConfigureRenderer(MeshRenderer renderer, Material material, bool castsShadow)
         {
             renderer.sharedMaterial = material;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
+            renderer.shadowCastingMode = castsShadow
+                ? UnityEngine.Rendering.ShadowCastingMode.On
+                : UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = true;
         }
 
         private void SetRendererColor(MeshRenderer renderer, Color color)
         {
-            if (renderer == null || !renderer.gameObject.activeSelf) return;
+            if (renderer == null) return;
             renderer.GetPropertyBlock(_propertyBlock);
             _propertyBlock.SetColor("_BaseColor", color);
             _propertyBlock.SetColor("_Color", color);
             renderer.SetPropertyBlock(_propertyBlock);
         }
+
     }
 }

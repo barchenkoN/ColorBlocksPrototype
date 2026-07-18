@@ -51,6 +51,7 @@ namespace ColorBlocks.Gameplay
         private readonly RuntimeUnit[] _slots = new RuntimeUnit[LevelSolver.SlotCount];
         private readonly Vector3[] _slotPositions = new Vector3[LevelSolver.SlotCount];
         private int _sessionVersion;
+        private int _lastLevelRequestFrame = -1;
         private float _lastImpactHapticTime = -10f;
         private bool _initialized;
 #if UNITY_EDITOR
@@ -133,7 +134,7 @@ namespace ColorBlocks.Gameplay
             Camera camera = Camera.main;
             if (camera == null) return;
             Ray ray = camera.ScreenPointToRay(screenPosition);
-            if (!Physics.Raycast(ray, out RaycastHit hit, 50f)) return;
+            if (!Physics.Raycast(ray, out RaycastHit hit, camera.farClipPlane)) return;
             UnitClickTarget target = hit.collider.GetComponentInParent<UnitClickTarget>();
             target?.NotifyClick();
         }
@@ -161,7 +162,7 @@ namespace ColorBlocks.Gameplay
             {
                 if (version != _sessionVersion || State != GameFlowState.Playing) return;
                 unit.State = UnitRuntimeState.Waiting;
-                unit.NextShotTime = Time.time + 0.05f;
+                unit.NextShotTime = Time.time + 0.02f;
                 _audio.Land();
             }));
         }
@@ -210,9 +211,10 @@ namespace ColorBlocks.Gameplay
             unit.View.AimAt(targetView.TargetPosition);
             _audio.Shot();
             StartCoroutine(unit.View.Recoil(_feel.RecoilDuration));
-            float distance = Vector2.Distance(unit.View.MuzzlePosition, targetView.TargetPosition);
+            float distance = Vector3.Distance(unit.View.MuzzlePosition, targetView.TargetPosition);
             float duration = _feel.ResolveProjectileDuration(distance);
             StartCoroutine(_projectiles.Play(
+                unit.Definition.Color,
                 unit.View.MuzzlePosition,
                 () => targetView.TargetPosition,
                 duration,
@@ -352,6 +354,13 @@ namespace ColorBlocks.Gameplay
         private void BeginWin()
         {
             if (State != GameFlowState.Playing) return;
+            // Clear active units before the result card appears. Otherwise the final shooter
+            // can remain visibly parked with zero charges behind the truthful empty board.
+            for (int slotIndex = 0; slotIndex < _slots.Length; slotIndex++)
+            {
+                RuntimeUnit unit = _slots[slotIndex];
+                if (unit != null) StartUnitLeaving(unit);
+            }
             State = GameFlowState.Completing;
             _audio.Win();
             _haptics.Heavy();
@@ -377,6 +386,7 @@ namespace ColorBlocks.Gameplay
         private void RestartCurrentLevel()
         {
             if (!_initialized || _currentLevel == null || State == GameFlowState.Restarting) return;
+            if (!TryBeginLevelRequest()) return;
             State = GameFlowState.Restarting;
             LoadLevel(_currentLevel.LevelNumber);
         }
@@ -384,8 +394,16 @@ namespace ColorBlocks.Gameplay
         private void LoadNextLevel()
         {
             if (!_initialized || State == GameFlowState.Transitioning) return;
+            if (!TryBeginLevelRequest()) return;
             State = GameFlowState.Transitioning;
             LoadLevel(_sequence.Next());
+        }
+
+        private bool TryBeginLevelRequest()
+        {
+            if (_lastLevelRequestFrame == Time.frameCount) return false;
+            _lastLevelRequestFrame = Time.frameCount;
+            return true;
         }
 
         private void LoadLevel(int levelNumber)
@@ -428,16 +446,27 @@ namespace ColorBlocks.Gameplay
             {
                 float x = _layout.SlotX(i, _slots.Length);
                 Vector3 position = new(x, _layout.SlotY, 0.18f);
-                _slotPositions[i] = new Vector3(x, _layout.SlotY + 0.14f, -0.08f);
+                Vector3 outerPosition = position +
+                    new Vector3(0f, 0.032f * _layout.PlaneVerticalScale, 0f);
+                _slotPositions[i] = new Vector3(
+                    x,
+                    _layout.SlotY + 0.14f * _layout.PlaneVerticalScale,
+                    -0.08f);
                 CreateSlotPart(
                     $"Slot_{i + 1}_Outer",
-                    position,
-                    new Vector3(_feel.SlotOuterSize.x, _feel.SlotOuterSize.y, 0.22f),
+                    outerPosition,
+                    new Vector3(
+                        _feel.SlotOuterSize.x,
+                        _feel.SlotOuterSize.y * _layout.PlaneVerticalScale,
+                        0.16f),
                     _theme.Slot);
                 CreateSlotPart(
                     $"Slot_{i + 1}_Inner",
-                    position + new Vector3(0f, 0f, -0.15f),
-                    new Vector3(_feel.SlotInnerSize.x, _feel.SlotInnerSize.y, 0.14f),
+                    position + new Vector3(0f, 0f, -0.10f),
+                    new Vector3(
+                        _feel.SlotInnerSize.x,
+                        _feel.SlotInnerSize.y * _layout.PlaneVerticalScale,
+                        0.10f),
                     _theme.SlotInner);
             }
         }
@@ -519,10 +548,11 @@ namespace ColorBlocks.Gameplay
             part.transform.position = position;
             part.transform.localScale = scale;
             MeshFilter filter = part.AddComponent<MeshFilter>();
-            filter.sharedMesh = ChamferedCubeMesh.Get();
+            filter.sharedMesh = RoundedBoxMesh.Get(0.30f);
             MeshRenderer renderer = part.AddComponent<MeshRenderer>();
             renderer.sharedMaterial = material;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            renderer.receiveShadows = true;
         }
 
         private void ClearLevelObjects()

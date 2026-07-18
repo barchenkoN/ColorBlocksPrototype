@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
@@ -12,24 +11,46 @@ namespace ColorBlocks.Presentation
     {
         private readonly MonoBehaviour _host;
         private readonly GameObject _root;
-        private readonly TMP_FontAsset _font;
-        private readonly TMP_Text _levelText;
+        private readonly Font _font;
+        private readonly Text _levelText;
         private readonly GameObject _resultOverlay;
         private readonly RectTransform _resultCard;
-        private readonly TMP_Text _resultTitle;
-        private readonly TMP_Text _resultMessage;
-        private readonly TMP_Text _actionLabel;
+        private readonly Text _resultTitle;
+        private readonly Text _resultMessage;
+        private readonly Text _actionLabel;
         private readonly Button _actionButton;
         private Action _action;
 
         public HudView(MonoBehaviour host, PresentationAssets assets, Action restartRequested)
         {
             _host = host;
-            _font = assets.PrimaryFont;
+            _font = assets.PrimaryFont.sourceFontFile;
+            if (_font == null)
+            {
+                throw new InvalidOperationException("The primary HUD font has no source font file.");
+            }
 
             _root = new GameObject("GameHUD");
             Canvas canvas = _root.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            Camera uiCamera = Camera.main;
+            if (uiCamera != null)
+            {
+                // Keep the canvas camera-bound for its complete lifetime. Switching an overlay
+                // canvas only for an off-screen render can leave TMP CanvasRenderers out of the
+                // submitted URP frame even though Images are present.
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = uiCamera;
+                canvas.planeDistance = 1f;
+            }
+            else
+            {
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            }
+            canvas.additionalShaderChannels =
+                AdditionalCanvasShaderChannels.TexCoord1 |
+                AdditionalCanvasShaderChannels.TexCoord2 |
+                AdditionalCanvasShaderChannels.Normal |
+                AdditionalCanvasShaderChannels.Tangent;
             canvas.sortingOrder = 100;
             CanvasScaler scaler = _root.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -41,20 +62,20 @@ namespace ColorBlocks.Presentation
             GameObject safeObject = CreateRect("SafeArea", _root.transform);
             safeObject.AddComponent<SafeAreaFitter>();
 
-            Image pillShadow = CreateRoundedImage("LevelPillShadow", safeObject.transform, new Color(0.035f, 0.075f, 0.16f, 0.38f));
-            SetAnchors(pillShadow.rectTransform, new Vector2(0.16f, 0.943f), new Vector2(0.84f, 0.981f), new Vector2(0f, -7f), new Vector2(0f, -7f));
+            Image pillShadow = CreateRoundedImage("LevelPillShadow", safeObject.transform, new Color(0.025f, 0.07f, 0.15f, 0.42f));
+            SetAnchors(pillShadow.rectTransform, new Vector2(0.16f, 0.918f), new Vector2(0.84f, 0.952f), new Vector2(0f, -7f), new Vector2(0f, -7f));
 
-            Image pill = CreateRoundedImage("LevelPill", safeObject.transform, new Color(0.075f, 0.18f, 0.34f, 0.98f));
-            SetAnchors(pill.rectTransform, new Vector2(0.16f, 0.943f), new Vector2(0.84f, 0.981f), Vector2.zero, Vector2.zero);
+            Image pill = CreateRoundedImage("LevelPill", safeObject.transform, new Color(0.12f, 0.36f, 0.72f, 0.98f));
+            SetAnchors(pill.rectTransform, new Vector2(0.16f, 0.918f), new Vector2(0.84f, 0.952f), Vector2.zero, Vector2.zero);
 
-            Image pillInner = CreateRoundedImage("LevelPillInner", pill.transform, new Color(0.025f, 0.09f, 0.17f, 0.95f));
-            Stretch(pillInner.rectTransform, 9f);
+            Image pillInner = CreateRoundedImage("LevelPillInner", pill.transform, new Color(0.10f, 0.27f, 0.45f, 0.98f));
+            Stretch(pillInner.rectTransform, 20f);
 
-            _levelText = CreateText("LevelText", pill.transform, 42f, TextAlignmentOptions.Center, Color.white);
+            _levelText = CreateText("LevelText", pill.transform, 42f, TextAnchor.MiddleCenter, Color.white);
             Stretch(_levelText.rectTransform, 5f);
 
             Button restart = CreateRestartButton(safeObject.transform);
-            SetAnchors(restart.GetComponent<RectTransform>(), new Vector2(0.865f, 0.943f), new Vector2(0.945f, 0.981f), Vector2.zero, Vector2.zero);
+            SetAnchors(restart.GetComponent<RectTransform>(), new Vector2(0.865f, 0.918f), new Vector2(0.945f, 0.952f), Vector2.zero, Vector2.zero);
             restart.onClick.AddListener(() => restartRequested?.Invoke());
 
             _resultOverlay = CreateRect("ResultOverlay", _root.transform);
@@ -72,18 +93,18 @@ namespace ColorBlocks.Presentation
             Image cardInner = CreateRoundedImage("CardInner", card.transform, new Color(0.16f, 0.31f, 0.52f, 0.92f));
             Stretch(cardInner.rectTransform, 10f);
 
-            _resultTitle = CreateText("ResultTitle", card.transform, 76f, TextAlignmentOptions.Center, new Color(1f, 0.82f, 0.20f));
+            _resultTitle = CreateText("ResultTitle", card.transform, 76f, TextAnchor.MiddleCenter, new Color(1f, 0.82f, 0.20f));
             SetAnchors(_resultTitle.rectTransform, new Vector2(0.06f, 0.58f), new Vector2(0.94f, 0.94f), Vector2.zero, Vector2.zero);
-            _resultTitle.enableAutoSizing = true;
-            _resultTitle.fontSizeMin = 44f;
-            _resultTitle.fontSizeMax = 76f;
+            _resultTitle.resizeTextForBestFit = true;
+            _resultTitle.resizeTextMinSize = 44;
+            _resultTitle.resizeTextMaxSize = 76;
 
-            _resultMessage = CreateText("ResultMessage", card.transform, 31f, TextAlignmentOptions.Center, new Color(0.90f, 0.95f, 1f));
+            _resultMessage = CreateText("ResultMessage", card.transform, 31f, TextAnchor.MiddleCenter, new Color(0.90f, 0.95f, 1f));
             SetAnchors(_resultMessage.rectTransform, new Vector2(0.08f, 0.38f), new Vector2(0.92f, 0.60f), Vector2.zero, Vector2.zero);
 
             _actionButton = CreateButton("Action", card.transform, "CONTINUE", new Color(0.32f, 0.76f, 0.30f), 40f);
             SetAnchors(_actionButton.GetComponent<RectTransform>(), new Vector2(0.17f, 0.10f), new Vector2(0.83f, 0.34f), Vector2.zero, Vector2.zero);
-            _actionLabel = _actionButton.GetComponentInChildren<TMP_Text>();
+            _actionLabel = _actionButton.GetComponentInChildren<Text>();
             _actionButton.onClick.AddListener(InvokeAction);
             _resultOverlay.SetActive(false);
 
@@ -100,6 +121,7 @@ namespace ColorBlocks.Presentation
         public void ShowResult(bool won, Action action)
         {
             _action = action;
+            _actionButton.interactable = true;
             _resultTitle.text = won ? "LEVEL\nCOMPLETE!" : "OUT OF\nSPACE";
             _resultTitle.color = won ? new Color(1f, 0.82f, 0.20f) : new Color(1f, 0.42f, 0.48f);
             _resultMessage.text = won ? "Board cleared!" : "No active unit matches the frontier.";
@@ -111,6 +133,7 @@ namespace ColorBlocks.Presentation
         public void HideResult()
         {
             _resultOverlay.SetActive(false);
+            _actionButton.interactable = false;
             _action = null;
         }
 
@@ -136,21 +159,34 @@ namespace ColorBlocks.Presentation
             _resultCard.localScale = Vector3.one;
         }
 
-        private void InvokeAction() => _action?.Invoke();
+        private void InvokeAction()
+        {
+            // Consume the callback before invoking it. Loading the next level is synchronous,
+            // so a rapid second UI event could otherwise observe Playing again and skip a level.
+            Action action = _action;
+            if (action == null) return;
+            _action = null;
+            _actionButton.interactable = false;
+            action.Invoke();
+        }
 
-        private TMP_Text CreateText(string name, Transform parent, float size, TextAlignmentOptions alignment, Color color)
+        private Text CreateText(string name, Transform parent, float size, TextAnchor alignment, Color color)
         {
             GameObject gameObject = CreateRect(name, parent);
-            TextMeshProUGUI text = gameObject.AddComponent<TextMeshProUGUI>();
+            Text text = gameObject.AddComponent<Text>();
             text.font = _font;
-            text.fontSize = size;
-            text.fontStyle = FontStyles.Bold;
+            text.fontSize = Mathf.RoundToInt(size);
+            text.fontStyle = FontStyle.Bold;
             text.alignment = alignment;
             text.color = color;
             text.raycastTarget = false;
-            text.textWrappingMode = TextWrappingModes.NoWrap;
-            text.outlineWidth = 0.14f;
-            text.outlineColor = new Color32(20, 31, 61, 255);
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+
+            Outline outline = gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color32(20, 31, 61, 230);
+            outline.effectDistance = new Vector2(2f, -2f);
+            outline.useGraphicAlpha = true;
             return text;
         }
 
@@ -168,7 +204,7 @@ namespace ColorBlocks.Presentation
             Image inner = CreateRoundedImage("Inner", image.transform, Color.Lerp(color, Color.white, 0.13f));
             Stretch(inner.rectTransform, 7f);
             inner.raycastTarget = false;
-            TMP_Text text = CreateText("Label", inner.transform, fontSize, TextAlignmentOptions.Center, Color.white);
+            Text text = CreateText("Label", inner.transform, fontSize, TextAnchor.MiddleCenter, Color.white);
             Stretch(text.rectTransform, 8f);
             text.text = label;
             return button;

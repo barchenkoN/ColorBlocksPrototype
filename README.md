@@ -20,9 +20,9 @@ Build helpers exist under:
 - `Color Blocks > Build > Android Development APK`
 - `Color Blocks > Build > Export iOS Xcode Project`
 
-The iOS project must pass through Xcode on macOS; this can be a local Mac or the included GitHub-hosted macOS workflow. `.github/workflows/ios-device-build.yml` compiles the Unity-generated Xcode project as an unsigned ARM64 device IPA and uploads it as a short-lived Actions artifact. The IPA must still be signed with the tester's Apple account before installation on a physical iPhone. Apple and Unity credentials must never be committed to this repository.
+For iPhone, select iOS in Unity Build Profiles and use the normal `Build` command, or run the equivalent menu helper above. Open the generated Xcode project on macOS, select a Development Team and the connected iPhone, then use Xcode `Run`. No Apple or Unity credentials belong in this repository.
 
-The cloud Xcode build was verified against Xcode 26.5. For device validation, sign `ColorBlocksPrototype-unsigned.ipa` with a free Personal Team account, install it on the provisioned iPhone, enable Developer Mode if requested, and record gameplay with the device's built-in portrait screen recorder.
+For Android, select Android in Build Profiles and use `Build`, or run the Android menu helper. The committed settings target IL2CPP/ARM64 and Android API 26 or newer.
 
 ## Implemented gameplay
 
@@ -36,7 +36,7 @@ The cloud Xcode build was verified against Xcode 26.5. For device validation, si
 - Level 3 is the first two-layer level. Removing the top layer reveals and animates the layer below.
 - Win, quiescent `Out of Space` loss, restart, and continue states.
 - Sequence: levels 1 and 2, then shuffled cycles of 3/4/5. Each cycle uses every level once and avoids a repeat at the cycle boundary.
-- Portrait safe-area HUD, level pill, restart control, result cards, responsive orthographic framing, audio, and light/soft/heavy native haptics.
+- Portrait safe-area HUD, level pill, restart control, result cards, responsive perspective framing, audio, and light/soft/heavy native haptics.
 
 Excluded as requested: tutorial, meta progression, shop, economy, ads, IAP, lives, boosters, blockers, online features, and copied reference branding.
 
@@ -47,7 +47,7 @@ The reference leaves some implementation details implicit. This prototype uses t
 1. Each board X coordinate is a vertical column.
 2. Every column is compacted bottom-to-top at load time and again whenever a whole stack is cleared; stack order never changes.
 3. The bottom stack in a column is its targetable frontier. Higher stacks fall toward it only after space opens below.
-4. Inside the frontier stack, only its highest surviving depth layer is exposed. Removing a top layer reveals the next layer without moving the stack.
+4. Inside the frontier stack, only its highest surviving depth layer is targetable. Every upper cube sits directly on the cube below with matching X/Y and exact face contact in Z. Removing the upper cube reveals the lower cube's full top face without moving it away from its physical support.
 5. A reservation temporarily blocks that exact exposed layer so simultaneous projectiles cannot select it twice; the reservation remains attached while its stack moves.
 6. A unit chooses a matching available column nearest its active slot; equal distances resolve to the lower X coordinate.
 7. An exhausted unit leaves only after its final projectile resolves.
@@ -99,9 +99,9 @@ For production-scale authoring, add a grid painter, batch difficulty scoring, an
 
 ## Presentation, audio, and haptics
 
-- Original code-native 2.5D toy blocks and tank units; shared chamfered mesh and instanced URP materials.
-- Fixed reference tile scale with separate horizontal/vertical pitch, narrow seams, readable front bands for covered layers, aligned five-slot and five-lane presentation.
-- A 0.267 s selection move with short overshoot, phase-preserved 0.075 s firing cadence, non-accumulating recoil and muzzle flash, round pooled projectiles with tapered tails, same-frame block replacement, pooled impact flash and colored fragments, 0.13 s layer reveal, and deterministic Y-only fall with one positional overshoot and monotonic settle.
+- Full 3D procedural presentation in URP. Board, blocks, stack layers, slots, rounded tank units, projectiles, trails, and impact fragments are mesh objects with real Z depth, lit materials, perspective projection, and realtime soft shadows. Tank counters use a dedicated 700-weight Fredoka face, a serialized shared outline/underlay material, and color-keyed queued states. Only the HUD is screen-space UI.
+- Fixed reference tile scale with narrow seams and a calibrated 29.5-degree perspective view. Base cubes rest on the tray; upper cubes are real stacked meshes one cube depth closer to the camera, making both physical layers and their molded side details readable.
+- A 0.18 s selection move with short overshoot, phase-preserved 0.067 s firing cadence, non-accumulating recoil and colored muzzle flash, pooled volumetric projectiles and trails, same-frame block replacement, pooled colored impact flash and 3-axis fragments, 0.10 s layer reveal, and deterministic Y-only stack fall with one positional overshoot and monotonic settle.
 - Imported one-shot audio with bounded voice count and small pitch variation. No runtime tone generation.
 - iOS uses cached `UIImpactFeedbackGenerator` instances for light, soft, and heavy feedback.
 - Android uses predefined `VibrationEffect` feedback where available, with safe fallbacks and session-level failure disabling.
@@ -111,7 +111,8 @@ For production-scale authoring, add a grid painter, batch difficulty scoring, an
 - Target: 60 FPS, portrait, linear color, IL2CPP, ARM64.
 - Android minimum API 26; custom manifest includes vibration permission.
 - iOS deployment target 15.0.
-- Mobile URP: HDR disabled, 2x MSAA, 1.0 render scale, and no realtime shadows; bevels and authored value contrast provide stable depth without long portrait-screen shadow artifacts.
+- Mobile URP: HDR disabled, 2x MSAA, 1.0 render scale, 1024 px main-light shadow map, realtime soft shadows, and a calibrated 230-unit shadow distance for the narrow perspective lens.
+- The main directional light provides short contact shadows; a weak shadow-free fill light preserves color and face readability on mobile.
 - Shared mesh/materials and `MaterialPropertyBlock` tinting prevent per-object material churn.
 - Projectile and impact-effect meshes are pooled; audio uses eight capped `AudioSource` voices.
 - Input physics is limited to a tap raycast against currently selectable queue units.
@@ -124,8 +125,8 @@ Physical-device profiling is still recommended before a production release, part
 
 Current automated coverage:
 
-- **26 EditMode tests:** compacting/frontier rules, stack-order preservation, arbitrary depth, moving reservations, deterministic priority, level sequence, malformed authoring data, exact ammo balance, dense canonical board/layer/unit counts, solver-proven completion, reproducible strategic losses, measured 1170 x 2532 geometry, fixed tile pitch, phase-preserved reference cadence, and the single-axis fall curve.
-- **5 PlayMode tests:** clean playable startup with one audio listener, real selection-to-impact-to-gravity-to-restart integration, complete live Level 1 win using the solver path, a live Level 2 `Out of Space` loss after five incorrect selections, and live rapid-fire cadence/recoil-rest validation.
+- **33 EditMode tests:** compacting/frontier rules, stack-order preservation, arbitrary depth, rejection of unsupported layers, moving reservations, deterministic priority, level sequence, malformed authoring data, exact ammo balance, dense canonical board/layer/unit counts, solver-proven completion, reproducible strategic losses, rounded 3D mesh integrity, measured perspective layout, camera fit at 720 x 1600 / 1080 x 1920 / 1170 x 2532, projected Z-layer separation, phase-preserved cadence, and the single-axis fall curve.
+- **13 PlayMode tests:** clean perspective startup with realtime shadow checks, a real screen-space perspective raycast, physical Level 3 cube contact at spawn and throughout fall/reveal, volumetric projectile checks, shared outlined counter typography and rounded tank proportions, selection-to-impact-to-gravity-to-restart integration, live solver completion of all five levels, truthful win/loss states, rapid repeated input/restart/result-action handling, and rapid-fire cadence/recoil-rest validation.
 
 The Editor-only `VisualCapture` harness renders the live camera and HUD at 1080 x 1920, 720 x 1600, and 1170 x 2532. It additionally captures a simulated safe area, the initial layered Level 3 board, selection at approximately 200 ms, firing at approximately 430 ms, settled gravity, the dense Level 5 board, and win/loss states. Do not pass `-nographics` when using this renderer.
 
@@ -133,21 +134,21 @@ Example:
 
 ```powershell
 Unity.exe -batchmode -projectPath <project> `
-  -executeMethod ColorBlocks.Editor.VisualCapture.Run `
+  -executeMethod ColorBlocks.Editor.VisualCapture.RunMobile `
   -captureOutput <output-folder> -logFile <capture-log>
 ```
 
 ## Known MVP limitations and production follow-up
 
 - Visuals are a coherent original procedural style, not a final outsourced art pack.
-- Safe area and aspect ratios are visually simulated in Editor; final sign-off still requires physical iOS and Android devices.
+- Safe area and aspect ratios are visually simulated in Editor; the submitted iOS build is additionally smoke-tested and recorded on a physical iPhone. A production release should add a broader iOS/Android device matrix.
 - Audio has no user-facing mixer/settings screen because settings/meta UI is outside this assignment.
 - No persistence is required for the five-level prototype. A production game should add save migration, localization, accessibility settings, analytics, and device-farm coverage.
 - iOS native haptics cannot be executed in the Windows Editor and must be verified from an Xcode device build.
 
 ## Third-party assets and AI disclosure
 
-- **Fredoka variable font** from Google Fonts, licensed under SIL Open Font License 1.1. License: `Assets/_Game/Art/Fonts/Fredoka-OFL.txt`.
+- **Fredoka variable font** from Google Fonts, plus the committed local 700-weight static instance used by tank counters, licensed under SIL Open Font License 1.1. License: `Assets/_Game/Art/Fonts/Fredoka-OFL.txt`.
 - **Kenney audio clips** from Interface Sounds, UI Audio, and Impact Sounds, licensed CC0. License: `Assets/_Game/Audio/Kenney/Kenney-CC0-License.txt`.
 - Unity URP, Input System, uGUI/TMP, and Test Framework packages are used under their Unity package licenses.
 - OpenAI Codex assisted with reference research, architecture, implementation, original procedural presentation, tests, visual QA tooling, and documentation.

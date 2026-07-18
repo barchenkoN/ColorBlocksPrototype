@@ -14,55 +14,69 @@ namespace ColorBlocks.Presentation
         [Header("Camera and board")]
         [SerializeField] private float referenceHalfWidth = 4.70f;
         [SerializeField] private float minimumCameraHalfHeight = 8.35f;
+        [SerializeField] private float cameraFieldOfView = 6f;
+        [SerializeField] private float cameraOverscan = 1.00f;
+        // Camera sits toward the lower edge of the tray and looks across it by 29.5 degrees.
+        // This exposes 43 px of a physical lower cube at the supplied iPhone resolution.
+        [SerializeField] private Vector2 cameraViewOffset = new(0f, -0.5653f);
+        [SerializeField] private float cameraTargetY = 0f;
+        [SerializeField] private float cameraTargetZ = 0.30f;
         [SerializeField] private float boardTopMargin = 1.48f;
-        [SerializeField] private float boardOuterWidth = 9.10f;
-        [SerializeField] private float boardOuterHeight = 8.55f;
+        [SerializeField] private float boardOuterWidth = 9.00f;
+        [SerializeField] private float boardOuterHeight = 8.21f;
         [SerializeField] private float boardInnerWidth = 8.48f;
-        [SerializeField] private float boardInnerHeight = 8.03f;
-        [SerializeField] private float gridWidth = 7.89f;
-        [SerializeField] private float gridHeight = 7.07f;
-        [SerializeField] private float gridTopPadding = -0.04f;
+        [SerializeField] private float boardInnerHeight = 7.89f;
+        [SerializeField] private float gridWidth = 8.00f;
+        [SerializeField] private float gridHeight = 7.48f;
+        [SerializeField] private float gridTopPadding = 0.614f;
         [SerializeField] private int referenceColumns = 10;
         [SerializeField] private int referenceRows = 10;
 
         [Header("Blocks")]
-        [SerializeField] private Vector2 blockFill = new(0.985f, 0.985f);
-        [SerializeField] private float blockDepth = 0.36f;
-        [SerializeField] private Vector2 faceScale = new(0.56f, 0.48f);
-        [SerializeField] private float stackLayerStep = 0.3535f;
-        [SerializeField] private float hiddenLayerDepth = 0.22f;
-        [SerializeField] private float blockShadowOffset = 0.045f;
-        [SerializeField] private Vector2 frontBandScale = new(0.91f, 0.46f);
-        [SerializeField] private float frontBandOffset = 0.70f;
+        [SerializeField] private Vector2 blockFill = new(0.990f, 0.990f);
+        [SerializeField] private float blockDepth = 0.7257f;
+        // Centre depth of a base cube resting on BoardInner. Higher layers subtract one
+        // hiddenLayerDepth, moving toward the camera without any screen-space offset.
+        [SerializeField] private float blockBoardDepth = -0.04f;
+        [SerializeField] private Vector2 faceScale = new(0.58f, 0.58f);
+        // Layers share the same board-space X/Y. Their visible screen separation comes from
+        // real Z height and the perspective camera instead of a fake 2D vertical offset.
+        [SerializeField] private float stackLayerStep = 0f;
+        [SerializeField] private float stackLayerHorizontalStep = 0f;
+        [SerializeField] private float hiddenLayerDepth = 0.7257f;
 
         [Header("Slots and queue")]
-        [SerializeField] private float slotHorizontalExtent = 3.46f;
-        [SerializeField] private float slotGapBelowBoard = 2.062f;
-        [SerializeField] private Vector2 slotOuterSize = new(1.47f, 1.39f);
-        [SerializeField] private Vector2 slotInnerSize = new(1.18f, 1.10f);
+        [SerializeField] private float slotHorizontalExtent = 3.45f;
+        [SerializeField] private float slotGapBelowBoard = 2.48f;
+        [SerializeField] private Vector2 slotOuterSize = new(1.50f, 1.34f);
+        [SerializeField] private Vector2 slotInnerSize = new(1.28f, 1.14f);
         [SerializeField] private float queueHorizontalExtent = 3.46f;
         [SerializeField] private float queueGapBelowSlots = 1.92f;
-        [SerializeField] private float queueMinimumSpacing = 1.08f;
+        // Allows the third queued row to compress slightly on 9:16 while the two taller
+        // reference aspects continue to use their authored/max spacing.
+        [SerializeField] private float queueMinimumSpacing = 0.75f;
         [SerializeField] private float queueMaximumSpacing = 1.74f;
-        [SerializeField] private float queueBottomMargin = 0.62f;
-        [SerializeField] private float queuedUnitScale = 1.18f;
-        [SerializeField] private float selectableUnitScale = 1.18f;
-        [SerializeField] private float activeUnitScale = 1.20f;
+        // Includes the queued unit's full tread silhouette and realtime contact shadow on
+        // the shortest supported 1080x1920 framing instead of fitting only its pivot.
+        [SerializeField] private float queueBottomMargin = 1.10f;
+        [SerializeField] private float queuedUnitScale = 1.31f;
+        [SerializeField] private float selectableUnitScale = 1.31f;
+        [SerializeField] private float activeUnitScale = 1.33f;
 
         [Header("Motion timing")]
-        [SerializeField] private float unitMoveDuration = 0.267f;
-        [SerializeField] private float unitMoveArc = 0.24f;
+        [SerializeField] private float unitMoveDuration = 0.18f;
+        [SerializeField] private float unitMoveArc = 0.20f;
         [SerializeField] private float queueSlideDuration = 0.18f;
-        [SerializeField] private float unitExitDuration = 0.22f;
-        [SerializeField] private float shotInterval = 0.075f;
-        [SerializeField] private float recoilDuration = 0.085f;
-        [SerializeField] private float projectileSpeed = 18.5f;
-        [SerializeField] private float projectileMinimumDuration = 0.16f;
-        [SerializeField] private float projectileMaximumDuration = 0.44f;
+        [SerializeField] private float unitExitDuration = 0.40f;
+        [SerializeField] private float shotInterval = 0.067f;
+        [SerializeField] private float recoilDuration = 0.065f;
+        [SerializeField] private float projectileSpeed = 30f;
+        [SerializeField] private float projectileMinimumDuration = 0.10f;
+        [SerializeField] private float projectileMaximumDuration = 0.30f;
         [SerializeField] private float projectileArc = 0.055f;
-        [SerializeField] private float projectileScale = 0.52f;
+        [SerializeField] private float projectileScale = 0.18f;
         [SerializeField] private int maximumProjectilesInFlight = 6;
-        [SerializeField] private float revealDuration = 0.13f;
+        [SerializeField] private float revealDuration = 0.10f;
         [SerializeField] private float fallDelay = 0.025f;
         [SerializeField] private float fallBaseDuration = 0.28f;
         [SerializeField] private float fallDistanceDuration = 0.04f;
@@ -77,18 +91,23 @@ namespace ColorBlocks.Presentation
 
         public float ReferenceHalfWidth => referenceHalfWidth;
         public float MinimumCameraHalfHeight => minimumCameraHalfHeight;
+        public float CameraFieldOfView => cameraFieldOfView;
+        public float CameraOverscan => cameraOverscan;
+        public Vector2 CameraViewOffset => cameraViewOffset;
+        public float CameraPlaneVerticalScale => Mathf.Sqrt(1f + cameraViewOffset.y * cameraViewOffset.y);
+        public float CameraTargetY => cameraTargetY;
+        public float CameraTargetZ => cameraTargetZ;
         public float BoardOuterWidth => boardOuterWidth;
         public float BoardOuterHeight => boardOuterHeight;
         public float BoardInnerWidth => boardInnerWidth;
         public float BoardInnerHeight => boardInnerHeight;
         public Vector2 BlockFill => blockFill;
         public float BlockDepth => blockDepth;
+        public float BlockBoardDepth => blockBoardDepth;
         public Vector2 FaceScale => faceScale;
         public float StackLayerStep => stackLayerStep;
+        public float StackLayerHorizontalStep => stackLayerHorizontalStep;
         public float HiddenLayerDepth => hiddenLayerDepth;
-        public float BlockShadowOffset => blockShadowOffset;
-        public Vector2 FrontBandScale => frontBandScale;
-        public float FrontBandOffset => frontBandOffset;
         public Vector2 SlotOuterSize => slotOuterSize;
         public Vector2 SlotInnerSize => slotInnerSize;
         public float QueuedUnitScale => queuedUnitScale;
@@ -137,29 +156,33 @@ namespace ColorBlocks.Presentation
 
         public GameplayLayout ResolveLayout(int boardWidth, int boardHeight, float aspect)
         {
-            float halfHeight = ResolveCameraHalfHeight(aspect);
-            float boardTop = halfHeight - boardTopMargin;
-            float boardBottom = boardTop - boardOuterHeight;
+            float verticalScale = CameraPlaneVerticalScale;
+            float halfHeight = ResolveCameraHalfHeight(aspect) * verticalScale;
+            float boardTop = halfHeight - boardTopMargin * verticalScale;
+            float boardBottom = boardTop - boardOuterHeight * verticalScale;
             float cellPitchX = gridWidth / Mathf.Max(1, referenceColumns);
-            float cellPitchY = gridHeight / Mathf.Max(1, referenceRows);
+            float cellPitchY = gridHeight * verticalScale / Mathf.Max(1, referenceRows);
             float actualGridWidth = boardWidth * cellPitchX;
-            float gridTop = boardTop - gridTopPadding;
+            float gridTop = boardTop - gridTopPadding * verticalScale;
             Vector3 origin = new(
                 -actualGridWidth * 0.5f + cellPitchX * 0.5f,
                 gridTop - referenceRows * cellPitchY + cellPitchY * 0.5f,
                 0f);
 
-            float slotY = boardBottom - slotGapBelowBoard;
-            float queueFrontY = slotY - queueGapBelowSlots;
-            float bottomLimit = -halfHeight + queueBottomMargin;
+            float slotY = boardBottom - slotGapBelowBoard * verticalScale;
+            float queueFrontY = slotY - queueGapBelowSlots * verticalScale;
+            float bottomLimit = -halfHeight + queueBottomMargin * verticalScale;
             float fitThreeRows = Mathf.Max(0f, (queueFrontY - bottomLimit) * 0.5f);
-            float queueSpacing = Mathf.Clamp(fitThreeRows, queueMinimumSpacing, queueMaximumSpacing);
+            float queueSpacing = Mathf.Clamp(
+                fitThreeRows,
+                queueMinimumSpacing * verticalScale,
+                queueMaximumSpacing * verticalScale);
 
             return new GameplayLayout(
                 halfHeight,
                 boardTop,
                 boardBottom,
-                boardTop - boardOuterHeight * 0.5f,
+                boardTop - boardOuterHeight * verticalScale * 0.5f,
                 cellPitchX,
                 cellPitchY,
                 origin,
@@ -167,9 +190,52 @@ namespace ColorBlocks.Presentation
                 queueFrontY,
                 queueSpacing,
                 slotHorizontalExtent,
-                queueHorizontalExtent);
+                queueHorizontalExtent,
+                verticalScale);
         }
 
+    }
+
+    /// <summary>
+    /// Configures a long-lens perspective portrait camera while preserving the measured gameplay
+    /// framing at the board plane. The supplied block pitch ratio resolves to a 29.5-degree
+    /// across-tray view, so physical Z separation reveals lower stack faces without Y cheating.
+    /// A narrow FOV keeps this a real perspective camera while holding grid pitch variation below
+    /// one percent across the complete board.
+    /// </summary>
+    public static class PresentationCameraRig
+    {
+        public static void Configure(Camera camera, GameFeelProfile feel, float aspect)
+        {
+            if (camera == null || feel == null) return;
+
+            float safeAspect = Mathf.Max(0.1f, aspect);
+            // The narrow lens preserves almost parallel grid lines while the independently
+            // authored 29.5-degree pitch supplies the visible physical depth.
+            float fieldOfView = Mathf.Clamp(feel.CameraFieldOfView, 4f, 65f);
+            float tangentHalfVertical = Mathf.Tan(fieldOfView * 0.5f * Mathf.Deg2Rad);
+            float halfHeight = feel.ResolveCameraHalfHeight(safeAspect);
+            float verticalDistance = halfHeight / tangentHalfVertical;
+            float horizontalDistance = feel.ReferenceHalfWidth / (tangentHalfVertical * safeAspect);
+            float distance = Mathf.Max(verticalDistance, horizontalDistance) *
+                Mathf.Clamp(feel.CameraOverscan, 1f, 1.25f);
+            Vector2 authoredOffset = feel.CameraViewOffset;
+            Vector3 viewOffset = new Vector3(authoredOffset.x, authoredOffset.y, -1f).normalized * distance;
+            Vector3 target = new(0f, feel.CameraTargetY, feel.CameraTargetZ);
+
+            camera.orthographic = false;
+            camera.fieldOfView = fieldOfView;
+            camera.transform.SetPositionAndRotation(
+                target + viewOffset,
+                Quaternion.LookRotation(-viewOffset, Vector3.up));
+            camera.nearClipPlane = 0.3f;
+            // The narrow FOV moves the camera well away from the board on
+            // the reference aspect. Keep the complete layered board and input colliders
+            // comfortably inside the frustum instead of using the old 80-unit limit.
+            camera.farClipPlane = Mathf.Max(100f, distance + 20f);
+            camera.allowHDR = false;
+            camera.allowMSAA = true;
+        }
     }
 
     public static class GameFeelMotion
@@ -238,7 +304,8 @@ namespace ColorBlocks.Presentation
             float queueFrontY,
             float queueSpacing,
             float slotHorizontalExtent,
-            float queueHorizontalExtent)
+            float queueHorizontalExtent,
+            float planeVerticalScale)
         {
             CameraHalfHeight = cameraHalfHeight;
             BoardTop = boardTop;
@@ -252,6 +319,7 @@ namespace ColorBlocks.Presentation
             QueueSpacing = queueSpacing;
             SlotHorizontalExtent = slotHorizontalExtent;
             QueueHorizontalExtent = queueHorizontalExtent;
+            PlaneVerticalScale = planeVerticalScale;
         }
 
         public float CameraHalfHeight { get; }
@@ -266,6 +334,7 @@ namespace ColorBlocks.Presentation
         public float QueueSpacing { get; }
         public float SlotHorizontalExtent { get; }
         public float QueueHorizontalExtent { get; }
+        public float PlaneVerticalScale { get; }
 
         public float SlotX(int index, int count)
         {
